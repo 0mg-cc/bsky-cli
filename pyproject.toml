@@ -1,0 +1,19 @@
+[project]
+name = "bsky-cli"
+version = "1.0.0"
+description = "Unified BlueSky CLI for Echo"
+requires-python = ">=3.11"
+dependencies = [
+    "requests>=2.31.0",
+    "python-dateutil>=2.8.0",
+]
+
+[project.scripts]
+bsky = "bsky_cli.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = ["pytest>=8.0.0"]

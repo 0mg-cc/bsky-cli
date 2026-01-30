@@ -1,0 +1,157 @@
+"""Notifications command for BlueSky CLI."""
+from __future__ import annotations
+
+import json
+import re
+from datetime import datetime, timezone
+from pathlib import Path
+
+import requests
+
+from .auth import get_session
+
+STATE_FILE = Path("/home/echo/.local/state/bsky_last_seen.txt")
+
+
+def get_notifications(pds: str, jwt: str, limit: int = 50) -> list[dict]:
+    """Fetch recent notifications."""
+    url = pds.rstrip("/") + "/xrpc/app.bsky.notification.listNotifications"
+    headers = {"Authorization": f"Bearer {jwt}"}
+    params = {"limit": limit}
+    r = requests.get(url, headers=headers, params=params, timeout=20)
+    r.raise_for_status()
+    return r.json().get("notifications", [])
+
+
+def update_seen(pds: str, jwt: str, seen_at: str) -> None:
+    """Mark notifications as seen up to timestamp."""
+    url = pds.rstrip("/") + "/xrpc/app.bsky.notification.updateSeen"
+    headers = {"Authorization": f"Bearer {jwt}"}
+    r = requests.post(url, json={"seenAt": seen_at}, headers=headers, timeout=20)
+    r.raise_for_status()
+
+
+def get_last_seen() -> str | None:
+    """Get last seen timestamp from state file."""
+    if STATE_FILE.exists():
+        return STATE_FILE.read_text().strip() or None
+    return None
+
+
+def save_last_seen(timestamp: str) -> None:
+    """Save last seen timestamp to state file."""
+    STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    STATE_FILE.write_text(timestamp)
+
+
+def format_notification(n: dict) -> str:
+    """Format a notification for human reading."""
+    reason = n.get("reason", "unknown")
+    author = n.get("author", {})
+    handle = author.get("handle", "unknown")
+    display_name = author.get("displayName", handle)
+    indexed_at = n.get("indexedAt", "")
+    
+    try:
+        dt = datetime.fromisoformat(indexed_at.replace("Z", "+00:00"))
+        time_str = dt.strftime("%Y-%m-%d %H:%M UTC")
+    except:
+        time_str = indexed_at
+    
+    record = n.get("record", {})
+    text = record.get("text", "")
+    
+    if reason == "reply":
+        return f"💬 REPLY from @{handle} ({display_name}) at {time_str}:\n   \"{text[:200]}{'...' if len(text) > 200 else ''}\""
+    elif reason == "mention":
+        return f"📢 MENTION from @{handle} ({display_name}) at {time_str}:\n   \"{text[:200]}{'...' if len(text) > 200 else ''}\""
+    elif reason == "like":
+        return f"❤️  LIKE from @{handle} ({display_name}) at {time_str}"
+    elif reason == "repost":
+        return f"🔁 REPOST from @{handle} ({display_name}) at {time_str}"
+    elif reason == "follow":
+        return f"👤 FOLLOW from @{handle} ({display_name}) at {time_str}"
+    elif reason == "quote":
+        return f"💭 QUOTE from @{handle} ({display_name}) at {time_str}:\n   \"{text[:200]}{'...' if len(text) > 200 else ''}\""
+    else:
+        return f"🔔 {reason.upper()} from @{handle} ({display_name}) at {time_str}"
+
+
+def get_post_url(n: dict) -> str | None:
+    """Extract a URL to the relevant post if available."""
+    uri = n.get("uri", "")
+    
+    if uri.startswith("at://"):
+        m = re.match(r"^at://([^/]+)/app\.bsky\.feed\.post/([^/]+)$", uri)
+        if m:
+            return f"https://bsky.app/profile/{m.group(1)}/post/{m.group(2)}"
+    
+    return None
+
+
+def run(args) -> int:
+    """Execute notify command."""
+    pds, did, jwt, _ = get_session()
+
+    notifications = get_notifications(pds, jwt, limit=args.limit)
+    
+    if args.json:
+        print(json.dumps(notifications, indent=2))
+        return 0
+
+    # Filter to new ones only (unless --all)
+    last_seen = get_last_seen()
+    if not args.all and last_seen:
+        notifications = [n for n in notifications if n.get("indexedAt", "") > last_seen]
+
+    if not notifications:
+        print("No new notifications.")
+        return 0
+
+    newest = max(n.get("indexedAt", "") for n in notifications)
+    
+    # Group by type
+    replies = [n for n in notifications if n.get("reason") == "reply"]
+    mentions = [n for n in notifications if n.get("reason") == "mention"]
+    quotes = [n for n in notifications if n.get("reason") == "quote"]
+    likes = [n for n in notifications if n.get("reason") == "like"]
+    reposts = [n for n in notifications if n.get("reason") == "repost"]
+    follows = [n for n in notifications if n.get("reason") == "follow"]
+    
+    print(f"=== BlueSky Notifications ({len(notifications)} new) ===\n")
+    
+    # Show important ones in full
+    important = replies + mentions + quotes
+    if important:
+        print("--- Replies/Mentions/Quotes (need attention) ---")
+        for n in sorted(important, key=lambda x: x.get("indexedAt", ""), reverse=True):
+            print(format_notification(n))
+            url = get_post_url(n)
+            if url:
+                print(f"   → {url}")
+            print()
+    
+    # Summarize the rest
+    if likes:
+        print(f"❤️  {len(likes)} likes")
+    if reposts:
+        print(f"🔁 {len(reposts)} reposts")
+    if follows:
+        print(f"👤 {len(follows)} new followers")
+        for n in follows[:5]:
+            author = n.get("author", {})
+            print(f"   - @{author.get('handle')} ({author.get('displayName', '')})")
+        if len(follows) > 5:
+            print(f"   ... and {len(follows) - 5} more")
+    
+    # Save state
+    if newest:
+        save_last_seen(newest)
+    
+    # Mark as read on BlueSky if requested
+    if args.mark_read and newest:
+        now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        update_seen(pds, jwt, now)
+        print("\n✓ Marked as read on BlueSky")
+
+    return 0
