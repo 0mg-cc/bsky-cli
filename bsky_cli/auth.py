@@ -6,7 +6,7 @@ import subprocess
 
 import requests
 
-PASS_PATH = "api/bsky"
+PASS_PATH = "api/bsky-echo"
 
 
 def load_from_pass(pass_path: str = PASS_PATH) -> dict | None:
