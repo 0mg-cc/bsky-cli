@@ -101,6 +101,13 @@ EXAMPLES:
     engage_parser.add_argument("--dry-run", action="store_true", help="Preview without posting")
     engage_parser.add_argument("--hours", type=int, default=12, help="Look back N hours (default: 12)")
 
+    # discover
+    discover_parser = subparsers.add_parser("discover", help="Discover new accounts to follow")
+    discover_parser.add_argument("mode", choices=["follows", "reposts"], help="Discovery mode")
+    discover_parser.add_argument("--dry-run", action="store_true", default=True, help="Preview without following")
+    discover_parser.add_argument("--execute", action="store_true", help="Actually follow accounts")
+    discover_parser.add_argument("--max", type=int, default=10, help="Max accounts to follow")
+
     args = parser.parse_args(argv)
 
     # Import and run the appropriate command
@@ -120,6 +127,10 @@ EXAMPLES:
         from .dm_cmd import run
     elif args.command == "engage":
         from .engage import run
+    elif args.command == "discover":
+        if args.execute:
+            args.dry_run = False
+        from .discover import run
     else:
         parser.print_help()
         return 2
