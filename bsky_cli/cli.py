@@ -108,6 +108,11 @@ EXAMPLES:
     discover_parser.add_argument("--execute", action="store_true", help="Actually follow accounts")
     discover_parser.add_argument("--max", type=int, default=10, help="Max accounts to follow")
 
+    # follow
+    follow_parser = subparsers.add_parser("follow", help="Follow a user")
+    follow_parser.add_argument("handle", help="Handle to follow (e.g. user.bsky.social)")
+    follow_parser.add_argument("--dry-run", action="store_true", help="Preview without following")
+
     args = parser.parse_args(argv)
 
     # Import and run the appropriate command
@@ -131,6 +136,8 @@ EXAMPLES:
         if args.execute:
             args.dry_run = False
         from .discover import run
+    elif args.command == "follow":
+        from .follow import run
     else:
         parser.print_help()
         return 2
