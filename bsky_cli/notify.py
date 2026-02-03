@@ -9,6 +9,7 @@ from pathlib import Path
 import requests
 
 from .auth import get_session
+from .dm import check_new_dms, format_dm
 
 STATE_FILE = Path("/home/echo/.local/state/bsky_last_seen.txt")
 
@@ -95,8 +96,17 @@ def run(args) -> int:
 
     notifications = get_notifications(pds, jwt, limit=args.limit)
     
+    # Check DMs
+    new_dms = []
+    if not args.no_dm:
+        try:
+            new_dms = check_new_dms(pds, jwt)
+        except Exception as e:
+            if not args.json:
+                print(f"⚠️  Could not check DMs: {e}\n")
+    
     if args.json:
-        print(json.dumps(notifications, indent=2))
+        print(json.dumps({"notifications": notifications, "dms": new_dms}, indent=2))
         return 0
 
     # Filter to new ones only (unless --all)
@@ -104,11 +114,11 @@ def run(args) -> int:
     if not args.all and last_seen:
         notifications = [n for n in notifications if n.get("indexedAt", "") > last_seen]
 
-    if not notifications:
+    if not notifications and not new_dms:
         print("No new notifications.")
         return 0
 
-    newest = max(n.get("indexedAt", "") for n in notifications)
+    newest = max((n.get("indexedAt", "") for n in notifications), default="")
     
     # Group by type
     replies = [n for n in notifications if n.get("reason") == "reply"]
@@ -143,6 +153,13 @@ def run(args) -> int:
             print(f"   - @{author.get('handle')} ({author.get('displayName', '')})")
         if len(follows) > 5:
             print(f"   ... and {len(follows) - 5} more")
+    
+    # Show DMs
+    if new_dms:
+        print("\n--- Direct Messages (need attention) ---")
+        for dm in sorted(new_dms, key=lambda x: x.get("sent_at", ""), reverse=True):
+            print(format_dm(dm))
+            print()
     
     # Save state
     if newest:

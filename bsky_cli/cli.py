@@ -64,6 +64,7 @@ EXAMPLES:
     notify_parser.add_argument("--json", action="store_true", help="Output raw JSON")
     notify_parser.add_argument("--mark-read", action="store_true", help="Mark as read on BlueSky")
     notify_parser.add_argument("--limit", type=int, default=50, help="Number to fetch (default: 50)")
+    notify_parser.add_argument("--no-dm", action="store_true", help="Skip DM check")
 
     # reply
     reply_parser = subparsers.add_parser("reply", help="Reply to a post")

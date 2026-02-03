@@ -51,7 +51,7 @@ def create_session(pds: str, identifier: str, password: str) -> dict:
 def get_session() -> tuple[str, str, str, str]:
     """Get authenticated session. Returns (pds, did, access_jwt, handle)."""
     env = load_credentials()
-    pds = env.get("BSKY_PDS", "https://bsky.social")
+    login_pds = env.get("BSKY_PDS", "https://bsky.social")
     handle = env.get("BSKY_HANDLE")
     email = env.get("BSKY_EMAIL")
     app_pw = env.get("BSKY_APP_PASSWORD")
@@ -60,7 +60,16 @@ def get_session() -> tuple[str, str, str, str]:
         raise SystemExit("Missing BSKY_HANDLE/BSKY_EMAIL or BSKY_APP_PASSWORD")
 
     identifier = handle or email
-    sess = create_session(pds, identifier, app_pw)
+    sess = create_session(login_pds, identifier, app_pw)
+    
+    # Extract actual PDS from didDoc if available (needed for chat proxy)
+    pds = login_pds
+    did_doc = sess.get("didDoc", {})
+    for svc in did_doc.get("service", []):
+        if svc.get("id") == "#atproto_pds" or svc.get("type") == "AtprotoPersonalDataServer":
+            pds = svc.get("serviceEndpoint", pds)
+            break
+    
     return pds, sess["did"], sess["accessJwt"], handle or email
 
 
