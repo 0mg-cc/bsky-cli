@@ -96,6 +96,11 @@ EXAMPLES:
     profile_parser.add_argument("--name", metavar="NAME", help="Display name")
     profile_parser.add_argument("--bio", metavar="TEXT", help="Profile description")
 
+    # engage
+    engage_parser = subparsers.add_parser("engage", help="Reply to interesting posts from follows")
+    engage_parser.add_argument("--dry-run", action="store_true", help="Preview without posting")
+    engage_parser.add_argument("--hours", type=int, default=12, help="Look back N hours (default: 12)")
+
     args = parser.parse_args(argv)
 
     # Import and run the appropriate command
@@ -113,6 +118,8 @@ EXAMPLES:
         from .profile import run
     elif args.command == "dm":
         from .dm_cmd import run
+    elif args.command == "engage":
+        from .engage import run
     else:
         parser.print_help()
         return 2
