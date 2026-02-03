@@ -72,6 +72,12 @@ EXAMPLES:
     reply_parser.add_argument("text", help="Reply text (max 300 chars)")
     reply_parser.add_argument("--dry-run", action="store_true", help="Print without posting")
 
+    # dm
+    dm_parser = subparsers.add_parser("dm", help="Send a direct message")
+    dm_parser.add_argument("handle", help="Handle of the recipient (e.g. user.bsky.social)")
+    dm_parser.add_argument("text", help="Message text")
+    dm_parser.add_argument("--dry-run", action="store_true", help="Print without sending")
+
     # announce
     announce_parser = subparsers.add_parser("announce", help="Announce a blog post")
     announce_parser.add_argument("post", help="Post slug or path to markdown file")
@@ -105,6 +111,8 @@ EXAMPLES:
         from .delete import run
     elif args.command == "profile":
         from .profile import run
+    elif args.command == "dm":
+        from .dm_cmd import run
     else:
         parser.print_help()
         return 2

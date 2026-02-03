@@ -126,3 +126,55 @@ def format_dm(dm: dict) -> str:
         time_str = sent_at
     
     return f"📩 DM from @{handle} ({display_name}) at {time_str}:\n   \"{text[:300]}{'...' if len(text) > 300 else ''}\""
+
+
+def get_or_create_convo(pds: str, jwt: str, member_did: str) -> dict:
+    """Get or create a conversation with a user by their DID."""
+    url = pds.rstrip("/") + "/xrpc/chat.bsky.convo.getConvoForMembers"
+    headers = {
+        "Authorization": f"Bearer {jwt}",
+        "atproto-proxy": f"{CHAT_PROXY_DID}#bsky_chat",
+    }
+    params = {"members": member_did}
+    r = requests.get(url, headers=headers, params=params, timeout=20)
+    r.raise_for_status()
+    return r.json().get("convo", {})
+
+
+def send_dm(pds: str, jwt: str, convo_id: str, text: str) -> dict:
+    """Send a DM to a conversation."""
+    url = pds.rstrip("/") + "/xrpc/chat.bsky.convo.sendMessage"
+    headers = {
+        "Authorization": f"Bearer {jwt}",
+        "Content-Type": "application/json",
+        "atproto-proxy": f"{CHAT_PROXY_DID}#bsky_chat",
+    }
+    payload = {
+        "convoId": convo_id,
+        "message": {
+            "text": text
+        }
+    }
+    r = requests.post(url, headers=headers, json=payload, timeout=20)
+    r.raise_for_status()
+    return r.json()
+
+
+def send_dm_to_handle(handle: str, text: str) -> dict:
+    """Send a DM to a user by handle. Returns the sent message."""
+    from .auth import get_session, resolve_handle
+    
+    pds, my_did, jwt, _ = get_session()
+    
+    # Resolve handle to DID
+    target_did = resolve_handle(pds, handle)
+    
+    # Get or create conversation
+    convo = get_or_create_convo(pds, jwt, target_did)
+    convo_id = convo.get("id")
+    
+    if not convo_id:
+        raise ValueError(f"Could not get/create conversation with {handle}")
+    
+    # Send message
+    return send_dm(pds, jwt, convo_id, text)
