@@ -4,7 +4,8 @@ A comprehensive command-line interface for BlueSky, designed for automation and 
 
 ## Features
 
-- **Post & Reply** — Create posts, reply to threads, announce blog posts
+- **Post & Reply** — Create posts, quote posts, reply to threads, announce blog posts
+- **Interactions** — Like, repost, search posts
 - **Engagement** — LLM-powered intelligent replies to interesting posts from your follows
 - **Discovery** — Find and follow relevant accounts based on interests
 - **Thread Tracking** — Monitor conversation threads with adaptive polling
@@ -72,8 +73,24 @@ bsky post "Hello, BlueSky!"
 # Post with link card
 bsky post --embed https://example.com "Check this out"
 
+# Quote another post
+bsky post --quote "https://bsky.app/profile/user/post/abc123" "This is so true!"
+
 # Reply to a post
 bsky reply "https://bsky.app/profile/user/post/abc123" "Great post!"
+
+# Like a post
+bsky like "https://bsky.app/profile/user/post/abc123"
+bsky like --undo "https://..."  # unlike
+
+# Repost
+bsky repost "https://bsky.app/profile/user/post/abc123"
+bsky repost --undo "https://..."  # unrepost
+
+# Search posts
+bsky search "AI agents"
+bsky search --author user.bsky.social "topic"
+bsky search --since 24h --sort top "query"
 
 # Check notifications
 bsky notify
@@ -187,8 +204,11 @@ bsky delete --count 5 --dry-run
 bsky_cli/
 ├── auth.py       # Credential loading (pass/env), session management
 ├── cli.py        # Main CLI entry point
-├── post.py       # Posting, link cards, facets
+├── post.py       # Posting, link cards, facets, quote posts
 ├── reply.py      # Reply with proper thread refs
+├── like.py       # Like/unlike posts
+├── repost.py     # Repost/unrepost
+├── search.py     # Search posts with filters
 ├── engage.py     # LLM-powered engagement
 ├── discover.py   # Account discovery
 ├── threads.py    # Thread tracking & monitoring
