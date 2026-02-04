@@ -51,7 +51,9 @@ class Post:
     like_count: int = 0
     is_reply: bool = False
     parent_uri: str | None = None
+    parent_cid: str | None = None
     root_uri: str | None = None
+    root_cid: str | None = None
     
     # Scoring
     base_score: float = 1.0
@@ -318,24 +320,33 @@ def get_replies_to_our_posts(pds: str, jwt: str, our_did: str, conversations: di
                     continue
                 
                 thread = r.json().get("thread", {})
+                # Get root post CID for threading
+                root_post = thread.get("post", {})
+                root_cid = root_post.get("cid", "")
+                
                 for reply in thread.get("replies", []):
                     post_data = reply.get("post", {})
                     if post_data.get("author", {}).get("did") == our_did:
                         continue  # Skip our own replies
+                    
+                    record = post_data.get("record", {})
+                    reply_ref = record.get("reply", {})
                     
                     replies.append(Post(
                         uri=post_data.get("uri", ""),
                         cid=post_data.get("cid", ""),
                         author_did=post_data.get("author", {}).get("did", ""),
                         author_handle=post_data.get("author", {}).get("handle", ""),
-                        text=post_data.get("record", {}).get("text", "")[:500],
-                        created_at=post_data.get("record", {}).get("createdAt", ""),
+                        text=record.get("text", "")[:500],
+                        created_at=record.get("createdAt", ""),
                         reply_count=post_data.get("replyCount", 0),
                         like_count=post_data.get("likeCount", 0),
                         repost_count=post_data.get("repostCount", 0),
                         is_reply=True,
-                        parent_uri=our_post_uri,
-                        root_uri=thread_key
+                        parent_uri=reply_ref.get("parent", {}).get("uri") or our_post_uri,
+                        parent_cid=reply_ref.get("parent", {}).get("cid"),
+                        root_uri=reply_ref.get("root", {}).get("uri") or thread_key,
+                        root_cid=reply_ref.get("root", {}).get("cid") or root_cid
                     ))
             except Exception:
                 continue
@@ -443,7 +454,9 @@ def filter_recent_posts(posts: list[dict], hours: int = 12) -> list[Post]:
             repost_count=post_data.get("repostCount", 0),
             is_reply=is_reply,
             parent_uri=reply_ref.get("parent", {}).get("uri") if is_reply else None,
-            root_uri=reply_ref.get("root", {}).get("uri") if is_reply else None
+            parent_cid=reply_ref.get("parent", {}).get("cid") if is_reply else None,
+            root_uri=reply_ref.get("root", {}).get("uri") if is_reply else None,
+            root_cid=reply_ref.get("root", {}).get("cid") if is_reply else None
         ))
     
     return recent
@@ -549,16 +562,33 @@ Return ONLY valid JSON, no markdown."""
         return []
 
 
-def post_reply(pds: str, jwt: str, did: str, parent_uri: str, parent_cid: str, text: str) -> dict | None:
-    """Post a reply to a post. Returns the created post data or None."""
+def post_reply(
+    pds: str, jwt: str, did: str, 
+    parent_uri: str, parent_cid: str, 
+    text: str,
+    root_uri: str | None = None, 
+    root_cid: str | None = None
+) -> dict | None:
+    """Post a reply to a post. Returns the created post data or None.
+    
+    Args:
+        parent_uri/parent_cid: The post we're directly replying to
+        root_uri/root_cid: The thread root (if different from parent)
+        
+    If root is not provided, parent is used as root (for top-level replies).
+    """
     now = dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    
+    # Use parent as root if root not specified (replying to a non-reply post)
+    actual_root_uri = root_uri or parent_uri
+    actual_root_cid = root_cid or parent_cid
     
     record = {
         "$type": "app.bsky.feed.post",
         "text": text,
         "createdAt": now,
         "reply": {
-            "root": {"uri": parent_uri, "cid": parent_cid},
+            "root": {"uri": actual_root_uri, "cid": actual_root_cid},
             "parent": {"uri": parent_uri, "cid": parent_cid}
         }
     }
@@ -667,15 +697,24 @@ def run(args) -> int:
         print()
         
         if not dry_run:
-            result = post_reply(pds, jwt, did, sel["uri"], sel["cid"], sel["reply"])
+            # Look up original Post to get root info for proper threading
+            original_post = next((p for p in candidates if p.uri == sel["uri"]), None)
+            root_uri = original_post.root_uri if original_post else None
+            root_cid = original_post.root_cid if original_post else None
+            
+            result = post_reply(
+                pds, jwt, did, 
+                sel["uri"], sel["cid"], sel["reply"],
+                root_uri=root_uri, root_cid=root_cid
+            )
             if result:
                 print(f"  ✓ Posted!")
                 state["replied_posts"].append(sel["uri"])
                 state.setdefault("replied_accounts_today", []).append(
-                    next((p.author_did for p in candidates if p.uri == sel["uri"]), "")
+                    original_post.author_did if original_post else ""
                 )
                 # Track for conversation continuation
-                track_reply(conversations, result.get("uri", ""), sel["uri"], sel.get("root_uri"))
+                track_reply(conversations, result.get("uri", ""), sel["uri"], root_uri)
             else:
                 print(f"  ✗ Failed to post")
     
