@@ -18,3 +18,20 @@ build-backend = "hatchling.build"
 
 [dependency-groups]
 dev = ["pytest>=8.0.0"]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=4.0",
+    "pytest-mock>=3.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
+
+[tool.coverage.run]
+source = ["bsky_cli"]
+omit = ["tests/*"]
