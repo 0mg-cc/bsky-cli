@@ -327,6 +327,27 @@ BACKOFF INTERVALS:
     threads_backoff_update.add_argument("target", help="Thread URL, URI, or root author handle")
     threads_backoff_update.add_argument("--activity", action="store_true", help="New activity was found (resets backoff)")
 
+    # people (interlocutor tracking)
+    people_parser = subparsers.add_parser(
+        "people", help="View interaction history with users",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+EXAMPLES:
+  bsky people                      # List all known interlocutors
+  bsky people --regulars           # List regulars only (3+ interactions)
+  bsky people @user.bsky.social    # Show history with specific user
+  bsky people --stats              # Show statistics
+
+BADGES IN NOTIFICATIONS:
+  🔄 = regular (3+ interactions)
+  🆕 = first contact
+"""
+    )
+    people_parser.add_argument("handle", nargs="?", help="Handle to look up")
+    people_parser.add_argument("--regulars", action="store_true", help="Show regulars only")
+    people_parser.add_argument("--stats", action="store_true", help="Show statistics")
+    people_parser.add_argument("--limit", type=int, default=20, help="Max users to show (default: 20)")
+
     # organic
     organic_parser = subparsers.add_parser(
         "organic", help="Organic posting (replaces 29 bsky-post crons)",
@@ -384,6 +405,8 @@ TYPICAL CRON SETUP:
         from .follow import run
     elif args.command == "threads":
         from .threads import run
+    elif args.command == "people":
+        from .people import run
     elif args.command == "organic":
         from .organic import run
     else:

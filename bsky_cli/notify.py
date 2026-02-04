@@ -45,11 +45,14 @@ def save_last_seen(timestamp: str) -> None:
     STATE_FILE.write_text(timestamp)
 
 
-def format_notification(n: dict) -> str:
+def format_notification(n: dict, show_relationship: bool = True) -> str:
     """Format a notification for human reading."""
+    from . import interlocutors
+    
     reason = n.get("reason", "unknown")
     author = n.get("author", {})
     handle = author.get("handle", "unknown")
+    did = author.get("did", "")
     display_name = author.get("displayName", handle)
     indexed_at = n.get("indexedAt", "")
     
@@ -62,20 +65,27 @@ def format_notification(n: dict) -> str:
     record = n.get("record", {})
     text = record.get("text", "")
     
+    # Interlocutor badge
+    badge = ""
+    if show_relationship and did:
+        badge = interlocutors.format_notification_badge(did)
+        if badge:
+            badge = f" {badge}"
+    
     if reason == "reply":
-        return f"💬 REPLY from @{handle} ({display_name}) at {time_str}:\n   \"{text[:200]}{'...' if len(text) > 200 else ''}\""
+        return f"💬 REPLY from @{handle}{badge} ({display_name}) at {time_str}:\n   \"{text[:200]}{'...' if len(text) > 200 else ''}\""
     elif reason == "mention":
-        return f"📢 MENTION from @{handle} ({display_name}) at {time_str}:\n   \"{text[:200]}{'...' if len(text) > 200 else ''}\""
+        return f"📢 MENTION from @{handle}{badge} ({display_name}) at {time_str}:\n   \"{text[:200]}{'...' if len(text) > 200 else ''}\""
     elif reason == "like":
-        return f"❤️  LIKE from @{handle} ({display_name}) at {time_str}"
+        return f"❤️  LIKE from @{handle}{badge} ({display_name}) at {time_str}"
     elif reason == "repost":
-        return f"🔁 REPOST from @{handle} ({display_name}) at {time_str}"
+        return f"🔁 REPOST from @{handle}{badge} ({display_name}) at {time_str}"
     elif reason == "follow":
-        return f"👤 FOLLOW from @{handle} ({display_name}) at {time_str}"
+        return f"👤 FOLLOW from @{handle}{badge} ({display_name}) at {time_str}"
     elif reason == "quote":
-        return f"💭 QUOTE from @{handle} ({display_name}) at {time_str}:\n   \"{text[:200]}{'...' if len(text) > 200 else ''}\""
+        return f"💭 QUOTE from @{handle}{badge} ({display_name}) at {time_str}:\n   \"{text[:200]}{'...' if len(text) > 200 else ''}\""
     else:
-        return f"🔔 {reason.upper()} from @{handle} ({display_name}) at {time_str}"
+        return f"🔔 {reason.upper()} from @{handle}{badge} ({display_name}) at {time_str}"
 
 
 def get_post_url(n: dict) -> str | None:

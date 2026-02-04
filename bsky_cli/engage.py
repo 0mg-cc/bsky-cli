@@ -467,24 +467,45 @@ def select_posts_with_llm(candidates: list[Post], state: dict, dry_run: bool = F
     if not candidates:
         return []
     
+    # Import interlocutor tracking
+    from . import interlocutors
+    
     # Load guidelines if available
     guidelines = ""
     if GUIDELINES_FILE.exists():
         guidelines = GUIDELINES_FILE.read_text()
     
-    # Prepare candidate data for LLM
+    # Prepare candidate data for LLM (with interlocutor history)
     posts_data = []
     for p in candidates[:50]:  # Cap at 50
-        posts_data.append({
+        post_entry = {
             "uri": p.uri,
             "cid": p.cid,
             "author_handle": p.author_handle,
+            "author_did": p.author_did,
             "text": p.text,
             "reply_count": p.reply_count,
             "like_count": p.like_count,
             "score": round(p.final_score, 2),
             "is_conversation_reply": p.is_reply and p.parent_uri is not None
-        })
+        }
+        
+        # Add interlocutor context
+        inter = interlocutors.get_interlocutor(p.author_did)
+        if inter:
+            post_entry["relationship"] = inter.relationship_summary
+            post_entry["is_regular"] = inter.is_regular
+            if inter.tags:
+                post_entry["tags"] = inter.tags
+            # Include last interaction snippet
+            recent = inter.recent_interactions(1)
+            if recent and recent[0].our_text:
+                post_entry["last_we_said"] = recent[0].our_text[:100]
+        else:
+            post_entry["relationship"] = "first contact"
+            post_entry["is_regular"] = False
+        
+        posts_data.append(post_entry)
     
     topics_str = ", ".join(TOPICS)
     posts_json = json.dumps(posts_data, indent=2)
@@ -508,11 +529,20 @@ Select 3-4 posts that are genuinely interesting to you and worth engaging with.
 Posts with higher "score" have been pre-filtered as better candidates.
 Posts marked "is_conversation_reply": true are replies to previous conversations - prioritize continuing these.
 
+**RELATIONSHIP CONTEXT:**
+- Each post includes "relationship" showing your history with the author
+- "is_regular": true means you've interacted 3+ times - be familiar, reference past exchanges if relevant
+- "first contact" means this is your first interaction - be welcoming but not overly familiar
+- "last_we_said" shows your last reply to them - DON'T REPEAT YOURSELF, vary your approach
+- "tags" show what you know about them (e.g., "ai-researcher", "friendly")
+
 For each selected post, write a thoughtful reply (max 280 chars) that:
 - Adds value to the conversation
 - Shows genuine interest or insight
 - Feels natural, not generic
 - Matches the tone of the original post
+- Adapts to your relationship (familiar with regulars, warm with new contacts)
+- Avoids repeating what you've said before to this person
 - Follows the style guidelines above
 
 DO NOT select:
@@ -528,6 +558,7 @@ Respond with a JSON array of objects, each with:
 - "uri": the post URI
 - "cid": the post CID  
 - "author_handle": handle of author
+- "author_did": DID of author (for tracking)
 - "reply": your reply text (max 280 chars)
 - "reason": why this post interested you (for logging)
 
@@ -710,11 +741,22 @@ def run(args) -> int:
             if result:
                 print(f"  ✓ Posted!")
                 state["replied_posts"].append(sel["uri"])
-                state.setdefault("replied_accounts_today", []).append(
-                    original_post.author_did if original_post else ""
-                )
+                author_did = sel.get("author_did") or (original_post.author_did if original_post else "")
+                state.setdefault("replied_accounts_today", []).append(author_did)
                 # Track for conversation continuation
                 track_reply(conversations, result.get("uri", ""), sel["uri"], root_uri)
+                
+                # Record interaction for interlocutor tracking
+                from . import interlocutors
+                their_text = original_post.text if original_post else ""
+                interlocutors.record_interaction(
+                    did=author_did,
+                    handle=sel["author_handle"],
+                    interaction_type="reply_to_them",
+                    post_uri=result.get("uri", ""),
+                    our_text=sel["reply"],
+                    their_text=their_text,
+                )
             else:
                 print(f"  ✗ Failed to post")
     
