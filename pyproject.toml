@@ -1,6 +1,6 @@
 [project]
 name = "bsky-cli"
-version = "1.5.0"
+version = "1.5.1"
 description = "Unified BlueSky CLI for Echo"
 requires-python = ">=3.11"
 dependencies = [

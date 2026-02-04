@@ -44,16 +44,20 @@ def detect_facets(text: str) -> list[dict] | None:
     # URLs
     for match in re.finditer(r'https?://[^\s<>\[\]()"\'\u200b]+', text):
         url = match.group(0).rstrip('.,;:!?)')
+        byte_start = char_to_byte(match.start())
+        byte_end = byte_start + len(url.encode('utf-8'))
         facets.append({
-            "index": {"byteStart": char_to_byte(match.start()), "byteEnd": char_to_byte(match.start() + len(url))},
+            "index": {"byteStart": byte_start, "byteEnd": byte_end},
             "features": [{"$type": "app.bsky.richtext.facet#link", "uri": url}]
         })
     
     # Hashtags
     for match in re.finditer(r'(?:^|\s)(#[^\d\s]\S{0,63})', text):
         tag = match.group(1).rstrip('.,;:!?)')
+        byte_start = char_to_byte(match.start(1))
+        byte_end = byte_start + len(tag.encode('utf-8'))
         facets.append({
-            "index": {"byteStart": char_to_byte(match.start(1)), "byteEnd": char_to_byte(match.start(1) + len(tag))},
+            "index": {"byteStart": byte_start, "byteEnd": byte_end},
             "features": [{"$type": "app.bsky.richtext.facet#tag", "tag": tag[1:]}]
         })
     

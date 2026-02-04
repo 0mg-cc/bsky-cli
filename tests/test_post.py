@@ -117,3 +117,46 @@ class TestCreateQuoteEmbed:
         assert embed["$type"] == "app.bsky.embed.record"
         assert embed["record"]["uri"] == "at://did:plc:test/app.bsky.feed.post/123"
         assert embed["record"]["cid"] == "cid123"
+
+
+def test_detect_facets_hashtag_after_emoji():
+    """Hashtag indices should be correct even after multi-byte characters."""
+    text = "🚀 Launch day! #AI #robots"
+    facets = detect_facets(text)
+    assert facets is not None
+    assert len(facets) == 2
+    # Verify byte indices are correct by extracting from text
+    for facet in facets:
+        start = facet["index"]["byteStart"]
+        end = facet["index"]["byteEnd"]
+        extracted = text.encode('utf-8')[start:end].decode('utf-8')
+        assert extracted.startswith('#')
+
+
+def test_detect_facets_url_after_emoji():
+    """URL indices should be correct even after multi-byte characters."""
+    text = "🔥 Check this: https://example.com"
+    facets = detect_facets(text)
+    assert facets is not None
+    assert len(facets) == 1
+    start = facets[0]["index"]["byteStart"]
+    end = facets[0]["index"]["byteEnd"]
+    extracted = text.encode('utf-8')[start:end].decode('utf-8')
+    assert extracted == "https://example.com"
+
+
+def test_detect_facets_mixed_multibyte():
+    """Complex text with emojis, accents, hashtags and URLs."""
+    text = "Énergie renouvelable 🌱 https://énergie.fr #écologie"
+    facets = detect_facets(text)
+    assert facets is not None
+    # Should have 1 URL and 1 hashtag
+    for facet in facets:
+        start = facet["index"]["byteStart"]
+        end = facet["index"]["byteEnd"]
+        extracted = text.encode('utf-8')[start:end].decode('utf-8')
+        feature_type = facet["features"][0]["$type"]
+        if "link" in feature_type:
+            assert extracted.startswith("https://")
+        else:
+            assert extracted.startswith("#")
