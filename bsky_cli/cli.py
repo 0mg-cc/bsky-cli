@@ -108,6 +108,17 @@ EXAMPLES:
     profile_parser.add_argument("--name", metavar="NAME", help="Display name")
     profile_parser.add_argument("--bio", metavar="TEXT", help="Profile description")
 
+    # search
+    search_parser = subparsers.add_parser("search", help="Search posts")
+    search_parser.add_argument("query", help="Search query")
+    search_parser.add_argument("--author", "-a", help="Filter by author handle or DID")
+    search_parser.add_argument("--since", "-s", help="Posts after this time (e.g. 24h, 7d)")
+    search_parser.add_argument("--until", "-u", help="Posts before this time")
+    search_parser.add_argument("--limit", "-n", type=int, default=25, help="Max results (default: 25)")
+    search_parser.add_argument("--sort", choices=["latest", "top"], default="latest", 
+                              help="Sort order (default: latest)")
+    search_parser.add_argument("--compact", "-c", action="store_true", help="Compact output (no metrics)")
+
     # engage
     engage_parser = subparsers.add_parser("engage", help="Reply to interesting posts from follows")
     engage_parser.add_argument("--dry-run", action="store_true", help="Preview without posting")
@@ -187,6 +198,8 @@ EXAMPLES:
         from .profile import run
     elif args.command == "dm":
         from .dm_cmd import run
+    elif args.command == "search":
+        from .search import run
     elif args.command == "engage":
         from .engage import run
     elif args.command == "discover":
