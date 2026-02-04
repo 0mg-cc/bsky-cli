@@ -148,6 +148,12 @@ EXAMPLES:
     threads_backoff_update.add_argument("target", help="Thread URL, URI, or root author handle")
     threads_backoff_update.add_argument("--activity", action="store_true", help="New activity was found (resets backoff)")
 
+    # organic
+    organic_parser = subparsers.add_parser("organic", help="Organic posting (replaces 29 bsky-post crons)")
+    organic_parser.add_argument("--dry-run", action="store_true", help="Preview without posting")
+    organic_parser.add_argument("--force", action="store_true", help="Ignore time window and probability")
+    organic_parser.add_argument("--probability", type=float, default=0.20, help="Posting probability (default: 0.20)")
+
     args = parser.parse_args(argv)
 
     # Import and run the appropriate command
@@ -175,6 +181,8 @@ EXAMPLES:
         from .follow import run
     elif args.command == "threads":
         from .threads import run
+    elif args.command == "organic":
+        from .organic import run
     else:
         parser.print_help()
         return 2
