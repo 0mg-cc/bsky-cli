@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
+import random
 import subprocess
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -13,6 +14,7 @@ from typing import Callable
 import requests
 
 from .auth import get_session, load_from_pass
+from .like import like_post
 
 # ============================================================================
 # CONFIGURATION
@@ -781,6 +783,12 @@ def run(args) -> int:
                     our_text=sel["reply"],
                     their_text=their_text,
                 )
+                
+                # Maybe like the post we replied to (40% chance)
+                if random.random() < 0.4:
+                    like_result = like_post(pds, jwt, did, sel["uri"], sel["cid"])
+                    if like_result:
+                        print(f"  ❤️ Also liked!")
             else:
                 print(f"  ✗ Failed to post")
     

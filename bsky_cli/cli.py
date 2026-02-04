@@ -237,6 +237,28 @@ HOW IT WORKS:
     engage_parser.add_argument("--dry-run", action="store_true", help="Preview without posting")
     engage_parser.add_argument("--hours", type=int, default=12, help="Look back N hours (default: 12)")
 
+    # appreciate
+    appreciate_parser = subparsers.add_parser(
+        "appreciate", help="Like/quote-repost interesting posts (passive engagement)",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+EXAMPLES:
+  bsky appreciate                  # Appreciate posts from last 12h
+  bsky appreciate --hours 24       # Look back 24 hours
+  bsky appreciate --dry-run        # Preview without acting
+  bsky appreciate --max 8          # Select up to 8 posts
+
+PROBABILISTIC BEHAVIOR:
+  Selected posts get acted upon with these probabilities:
+  - 60% chance: Like
+  - 20% chance: Quote-repost (with LLM comment)
+  - 20% chance: Skip (no action)
+"""
+    )
+    appreciate_parser.add_argument("--dry-run", action="store_true", help="Preview without acting")
+    appreciate_parser.add_argument("--hours", type=int, default=12, help="Look back N hours (default: 12)")
+    appreciate_parser.add_argument("--max", type=int, default=5, help="Max posts to select (default: 5)")
+
     # discover
     discover_parser = subparsers.add_parser(
         "discover", help="Discover new accounts to follow",
@@ -397,6 +419,8 @@ TYPICAL CRON SETUP:
         from .search import run
     elif args.command == "engage":
         from .engage import run
+    elif args.command == "appreciate":
+        from .appreciate import run
     elif args.command == "discover":
         if args.execute:
             args.dry_run = False
