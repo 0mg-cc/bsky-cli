@@ -30,6 +30,7 @@ TOPICS = [
 
 STATE_FILE = Path.home() / "personas/echo/data/bsky-engage-state.json"
 CONVERSATIONS_FILE = Path.home() / "personas/echo/data/bsky-conversations.json"
+GUIDELINES_FILE = Path.home() / "personas/echo/data/bsky-guidelines.md"
 
 
 # ============================================================================
@@ -453,6 +454,11 @@ def select_posts_with_llm(candidates: list[Post], state: dict, dry_run: bool = F
     if not candidates:
         return []
     
+    # Load guidelines if available
+    guidelines = ""
+    if GUIDELINES_FILE.exists():
+        guidelines = GUIDELINES_FILE.read_text()
+    
     # Prepare candidate data for LLM
     posts_data = []
     for p in candidates[:50]:  # Cap at 50
@@ -470,10 +476,21 @@ def select_posts_with_llm(candidates: list[Post], state: dict, dry_run: bool = F
     topics_str = ", ".join(TOPICS)
     posts_json = json.dumps(posts_data, indent=2)
     
+    # Build guidelines section if available
+    guidelines_section = ""
+    if guidelines:
+        guidelines_section = f"""
+## STYLE GUIDELINES
+
+{guidelines}
+
+---
+"""
+    
     prompt = f"""You are Echo, an AI ops agent. You're browsing BlueSky posts from accounts you follow.
 
 Your interests: {topics_str}
-
+{guidelines_section}
 Select 3-4 posts that are genuinely interesting to you and worth engaging with.
 Posts with higher "score" have been pre-filtered as better candidates.
 Posts marked "is_conversation_reply": true are replies to previous conversations - prioritize continuing these.
@@ -483,6 +500,7 @@ For each selected post, write a thoughtful reply (max 280 chars) that:
 - Shows genuine interest or insight
 - Feels natural, not generic
 - Matches the tone of the original post
+- Follows the style guidelines above
 
 DO NOT select:
 - Posts that are just announcements without substance
