@@ -47,6 +47,9 @@ MAX_TOPIC_DRIFT = 0.7
 # Default silence hours before cron auto-disables
 DEFAULT_SILENCE_HOURS = 18
 
+# Backoff intervals in minutes (exponential: 10 → 20 → 40 → 80 → 160 → 240 → final 18h check)
+BACKOFF_INTERVALS = [10, 20, 40, 80, 160, 240]
+
 
 # ============================================================================
 # DATA STRUCTURES
@@ -99,6 +102,10 @@ class TrackedThread:
     our_reply_texts: list[str] = field(default_factory=list)  # Our replies for consistency check
     cron_id: str | None = None
     enabled: bool = True
+    # Backoff state
+    backoff_level: int = 0      # Index into BACKOFF_INTERVALS (0 = 10min, 5 = 240min)
+    last_check_at: str | None = None  # When we last checked this thread
+    last_new_activity_at: str | None = None  # When we last saw new activity
     
     def to_dict(self) -> dict:
         return {
@@ -116,7 +123,10 @@ class TrackedThread:
             "engaged_interlocutors": self.engaged_interlocutors,
             "our_reply_texts": self.our_reply_texts,
             "cron_id": self.cron_id,
-            "enabled": self.enabled
+            "enabled": self.enabled,
+            "backoff_level": self.backoff_level,
+            "last_check_at": self.last_check_at,
+            "last_new_activity_at": self.last_new_activity_at
         }
     
     @classmethod
@@ -137,7 +147,10 @@ class TrackedThread:
             engaged_interlocutors=d.get("engaged_interlocutors", []),
             our_reply_texts=d.get("our_reply_texts", []),
             cron_id=d.get("cron_id"),
-            enabled=d.get("enabled", True)
+            enabled=d.get("enabled", True),
+            backoff_level=d.get("backoff_level", 0),
+            last_check_at=d.get("last_check_at"),
+            last_new_activity_at=d.get("last_new_activity_at")
         )
 
 
@@ -915,6 +928,131 @@ def cmd_check_branches(args) -> int:
     return 0
 
 
+def cmd_backoff_check(args) -> int:
+    """
+    Check if we should run a thread check based on backoff state.
+    Returns 0 if should check, 1 if should skip, 2 on error.
+    
+    This implements exponential backoff:
+    - Start at 10 minutes
+    - If no new activity: 10 → 20 → 40 → 80 → 160 → 240 minutes
+    - After 240 min with no activity: one final check at 18h, then disable
+    - If new activity detected: reset to 10 minutes
+    """
+    state = load_threads_state()
+    threads = state.get("threads", {})
+    
+    target = args.target
+    found_uri = None
+    for uri, t_data in threads.items():
+        if (target in uri or 
+            target in t_data.get("root_url", "") or 
+            target == t_data.get("root_author_handle")):
+            found_uri = uri
+            break
+    
+    if not found_uri:
+        print(f"❌ Thread not found: {target}")
+        return 2
+    
+    thread = TrackedThread.from_dict(threads[found_uri])
+    now = datetime.now(timezone.utc)
+    
+    # Get current backoff interval
+    backoff_level = thread.backoff_level
+    if backoff_level >= len(BACKOFF_INTERVALS):
+        # We're past all intervals - check if 18h have passed for final check
+        if thread.last_check_at:
+            last_check = datetime.fromisoformat(thread.last_check_at.replace("Z", "+00:00"))
+            hours_since = (now - last_check).total_seconds() / 3600
+            if hours_since < DEFAULT_SILENCE_HOURS:
+                remaining = DEFAULT_SILENCE_HOURS - hours_since
+                print(f"⏸ SKIP - Final 18h check not due yet ({remaining:.1f}h remaining)")
+                print(f"  Thread: @{thread.root_author_handle}")
+                print(f"  Backoff: FINAL (18h)")
+                return 1
+            else:
+                print(f"🔚 FINAL CHECK - 18h silence reached")
+                print(f"  Thread: @{thread.root_author_handle}")
+                print(f"  Recommendation: Disable cron if no activity")
+                return 0
+        current_interval = DEFAULT_SILENCE_HOURS * 60  # In minutes
+    else:
+        current_interval = BACKOFF_INTERVALS[backoff_level]
+    
+    # Check if enough time has passed
+    if thread.last_check_at:
+        last_check = datetime.fromisoformat(thread.last_check_at.replace("Z", "+00:00"))
+        minutes_since = (now - last_check).total_seconds() / 60
+        
+        if minutes_since < current_interval:
+            remaining = current_interval - minutes_since
+            print(f"⏸ SKIP - Not due yet ({remaining:.0f}min remaining)")
+            print(f"  Thread: @{thread.root_author_handle}")
+            print(f"  Backoff level: {backoff_level} ({current_interval}min interval)")
+            return 1
+    
+    # Should check - output status
+    print(f"✓ CHECK - Due now")
+    print(f"  Thread: @{thread.root_author_handle}")
+    print(f"  Backoff level: {backoff_level} ({current_interval}min interval)")
+    print(f"  Last activity: {thread.last_activity_at}")
+    return 0
+
+
+def cmd_backoff_update(args) -> int:
+    """
+    Update backoff state after a check.
+    Call with --activity if new activity was found, otherwise backoff increases.
+    """
+    state = load_threads_state()
+    threads = state.get("threads", {})
+    
+    target = args.target
+    found_uri = None
+    for uri, t_data in threads.items():
+        if (target in uri or 
+            target in t_data.get("root_url", "") or 
+            target == t_data.get("root_author_handle")):
+            found_uri = uri
+            break
+    
+    if not found_uri:
+        print(f"❌ Thread not found: {target}")
+        return 2
+    
+    thread_data = threads[found_uri]
+    now = datetime.now(timezone.utc).isoformat()
+    
+    # Update last check time
+    thread_data["last_check_at"] = now
+    
+    if args.activity:
+        # New activity - reset backoff to 0
+        old_level = thread_data.get("backoff_level", 0)
+        thread_data["backoff_level"] = 0
+        thread_data["last_new_activity_at"] = now
+        print(f"✓ Backoff RESET (was level {old_level}, now 0)")
+        print(f"  Next check: 10 minutes")
+    else:
+        # No activity - increase backoff
+        old_level = thread_data.get("backoff_level", 0)
+        new_level = min(old_level + 1, len(BACKOFF_INTERVALS))
+        thread_data["backoff_level"] = new_level
+        
+        if new_level >= len(BACKOFF_INTERVALS):
+            print(f"⏫ Backoff MAXED (level {old_level} → FINAL)")
+            print(f"  Next check: 18 hours (final check before disable)")
+        else:
+            next_interval = BACKOFF_INTERVALS[new_level]
+            print(f"⏫ Backoff INCREASED (level {old_level} → {new_level})")
+            print(f"  Next check: {next_interval} minutes")
+    
+    state["threads"][found_uri] = thread_data
+    save_threads_state(state)
+    return 0
+
+
 def run(args) -> int:
     """Entry point from CLI."""
     if args.threads_command == "evaluate":
@@ -927,6 +1065,10 @@ def run(args) -> int:
         return cmd_unwatch(args)
     elif args.threads_command == "branches":
         return cmd_check_branches(args)
+    elif args.threads_command == "backoff-check":
+        return cmd_backoff_check(args)
+    elif args.threads_command == "backoff-update":
+        return cmd_backoff_update(args)
     else:
         print("Unknown threads command")
         return 2

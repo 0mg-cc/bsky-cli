@@ -138,6 +138,15 @@ EXAMPLES:
     # threads branches
     threads_branches = threads_sub.add_parser("branches", help="Check branch relevance for a thread")
     threads_branches.add_argument("target", help="Thread URL, URI, or root author handle")
+    
+    # threads backoff-check
+    threads_backoff_check = threads_sub.add_parser("backoff-check", help="Check if thread check is due (for cron)")
+    threads_backoff_check.add_argument("target", help="Thread URL, URI, or root author handle")
+    
+    # threads backoff-update
+    threads_backoff_update = threads_sub.add_parser("backoff-update", help="Update backoff state after check")
+    threads_backoff_update.add_argument("target", help="Thread URL, URI, or root author handle")
+    threads_backoff_update.add_argument("--activity", action="store_true", help="New activity was found (resets backoff)")
 
     args = parser.parse_args(argv)
 
