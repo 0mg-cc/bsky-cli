@@ -209,6 +209,29 @@ class ConversationBonus(ScoreMultiplier):
         return 1.0
 
 
+class FriendlyInterlocutorBonus(ScoreMultiplier):
+    """Boost posts from interlocutors tagged as friendly."""
+    name = "friendly_bonus"
+    
+    def calculate(self, post: Post, state: dict) -> float:
+        from . import interlocutors
+        inter = interlocutors.get_interlocutor(post.author_did)
+        if not inter:
+            return 1.0
+        
+        multiplier = 1.0
+        
+        # Friendly tag = strong bonus
+        if "friendly" in inter.tags:
+            multiplier *= 1.5
+        
+        # Regular interlocutor = moderate bonus
+        if inter.is_regular:
+            multiplier *= 1.3
+        
+        return multiplier
+
+
 class FreshPostBonus(ScoreMultiplier):
     """Boost very recent posts (reply while relevant)."""
     name = "fresh_post_bonus"
@@ -658,6 +681,7 @@ def create_default_pipeline(our_did: str) -> FilterPipeline:
         .add_multiplier(LowEngagementBonus())
         .add_multiplier(ConversationBonus(our_did))
         .add_multiplier(FreshPostBonus())
+        .add_multiplier(FriendlyInterlocutorBonus())  # Boost friendly/regular interlocutors
     )
 
 
