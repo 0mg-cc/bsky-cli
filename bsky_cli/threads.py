@@ -37,6 +37,9 @@ RELEVANT_TOPICS = [
 # Minimum score to recommend cron creation (0-100 scale)
 CRON_THRESHOLD = 60
 
+# Minimum thread depth before recommending cron (root → reply → reply = 3)
+MIN_THREAD_DEPTH = 3
+
 # Default silence hours before cron auto-disables
 DEFAULT_SILENCE_HOURS = 18
 
@@ -472,9 +475,13 @@ def cmd_evaluate(args) -> int:
         
         if score >= CRON_THRESHOLD and thread_info:
             if root_uri not in seen_threads:
-                high_value_threads.append(thread_info)
-                seen_threads.add(root_uri)
-                print(f"  ⭐ HIGH VALUE - recommend cron monitoring")
+                # Check minimum thread depth (root → reply → reply = 3)
+                if thread_info.reply_count >= MIN_THREAD_DEPTH - 1:  # reply_count doesn't include root
+                    high_value_threads.append(thread_info)
+                    seen_threads.add(root_uri)
+                    print(f"  ⭐ HIGH VALUE - recommend cron monitoring")
+                else:
+                    print(f"  ⭐ HIGH VALUE (too shallow: {thread_info.reply_count + 1}/{MIN_THREAD_DEPTH} msgs)")
             else:
                 print(f"  ⭐ HIGH VALUE (already tracked)")
         print()
