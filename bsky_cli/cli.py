@@ -56,6 +56,7 @@ EXAMPLES:
     post_parser = subparsers.add_parser("post", help="Post a message")
     post_parser.add_argument("text", nargs="?", help="Post text (max 300 chars)")
     post_parser.add_argument("--embed", metavar="URL", help="URL to embed with link preview")
+    post_parser.add_argument("--quote", "-q", metavar="URL", help="Quote post URL")
     post_parser.add_argument("--dry-run", action="store_true", help="Print without posting")
 
     # notify

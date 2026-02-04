@@ -150,6 +150,65 @@ def create_external_embed(pds: str, jwt: str, url: str) -> dict:
     return embed
 
 
+def resolve_post(pds: str, jwt: str, url: str) -> tuple[str, str] | None:
+    """
+    Resolve a post URL to (uri, cid).
+    Returns None if resolution fails.
+    """
+    import re
+    
+    # Parse URL: https://bsky.app/profile/HANDLE_OR_DID/post/RKEY
+    m = re.match(r"https://bsky\.app/profile/([^/]+)/post/([^/]+)", url)
+    if not m:
+        return None
+    
+    actor, rkey = m.groups()
+    
+    # Resolve handle to DID if needed
+    if not actor.startswith("did:"):
+        try:
+            r = requests.get(
+                f"{pds}/xrpc/com.atproto.identity.resolveHandle",
+                headers={"Authorization": f"Bearer {jwt}"},
+                params={"handle": actor},
+                timeout=10
+            )
+            r.raise_for_status()
+            actor = r.json()["did"]
+        except Exception:
+            return None
+    
+    # Build URI and fetch post to get CID
+    uri = f"at://{actor}/app.bsky.feed.post/{rkey}"
+    
+    try:
+        r = requests.get(
+            f"{pds}/xrpc/app.bsky.feed.getPosts",
+            headers={"Authorization": f"Bearer {jwt}"},
+            params={"uris": uri},
+            timeout=15
+        )
+        r.raise_for_status()
+        posts = r.json().get("posts", [])
+        if posts:
+            return uri, posts[0].get("cid")
+    except Exception:
+        pass
+    
+    return None
+
+
+def create_quote_embed(uri: str, cid: str) -> dict:
+    """Create a quote post embed."""
+    return {
+        "$type": "app.bsky.embed.record",
+        "record": {
+            "uri": uri,
+            "cid": cid
+        }
+    }
+
+
 def create_post(pds: str, jwt: str, did: str, text: str, facets=None, embed=None) -> dict:
     """Create a post."""
     record = {
@@ -184,15 +243,25 @@ def run(args) -> int:
         raise SystemExit(f"Post too long ({len(text)} chars, max 300)")
 
     facets = detect_facets(text)
+    quote_url = getattr(args, 'quote', None)
 
     if args.dry_run:
-        print(f"DRY RUN\nText: {text}\nEmbed: {args.embed}")
+        print(f"DRY RUN\nText: {text}\nEmbed: {args.embed}\nQuote: {quote_url}")
         return 0
 
     pds, did, jwt, _ = get_session()
 
     embed = None
-    if args.embed:
+    
+    # Quote post takes precedence over link embed
+    if quote_url:
+        resolved = resolve_post(pds, jwt, quote_url)
+        if not resolved:
+            raise SystemExit(f"Could not resolve post: {quote_url}")
+        uri, cid = resolved
+        embed = create_quote_embed(uri, cid)
+        print(f"📝 Quoting: {quote_url}")
+    elif args.embed:
         embed = create_external_embed(pds, jwt, args.embed)
 
     res = create_post(pds, jwt, did, text, facets=facets, embed=embed)
