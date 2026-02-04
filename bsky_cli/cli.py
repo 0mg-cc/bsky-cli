@@ -78,6 +78,12 @@ EXAMPLES:
     like_parser.add_argument("--undo", action="store_true", help="Unlike instead of like")
     like_parser.add_argument("--dry-run", action="store_true", help="Print without acting")
 
+    # repost
+    repost_parser = subparsers.add_parser("repost", help="Repost a post")
+    repost_parser.add_argument("post_url", help="URL of the post to repost")
+    repost_parser.add_argument("--undo", action="store_true", help="Remove repost")
+    repost_parser.add_argument("--dry-run", action="store_true", help="Print without acting")
+
     # dm
     dm_parser = subparsers.add_parser("dm", help="Send a direct message")
     dm_parser.add_argument("handle", help="Handle of the recipient (e.g. user.bsky.social)")
@@ -171,6 +177,8 @@ EXAMPLES:
         from .reply import run
     elif args.command == "like":
         from .like import run
+    elif args.command == "repost":
+        from .repost import run
     elif args.command == "announce":
         from .announce import run
     elif args.command == "delete":
