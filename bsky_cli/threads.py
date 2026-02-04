@@ -1,8 +1,9 @@
 """Thread tracking and evaluation for BlueSky engagement.
 
 This module provides:
-- Thread importance scoring based on interlocutor quality and topic relevance
-- Active thread monitoring and state management
+- Thread-level scoring for cron relevance
+- Branch tracking within threads
+- Topic drift detection for branch relevance
 - Cron configuration generation for high-value threads
 """
 from __future__ import annotations
@@ -40,6 +41,9 @@ CRON_THRESHOLD = 60
 # Minimum thread depth before recommending cron (root → reply → reply = 3)
 MIN_THREAD_DEPTH = 3
 
+# Maximum topic drift before skipping a branch (0-1 scale)
+MAX_TOPIC_DRIFT = 0.7
+
 # Default silence hours before cron auto-disables
 DEFAULT_SILENCE_HOURS = 18
 
@@ -49,40 +53,86 @@ DEFAULT_SILENCE_HOURS = 18
 # ============================================================================
 
 @dataclass
-class ThreadInfo:
-    """Information about a tracked thread."""
-    thread_uri: str  # Root post URI
-    thread_url: str  # Human-readable URL
-    interlocutor_handle: str
-    interlocutor_did: str
-    topic_summary: str
-    score: float
-    last_reply_at: str
-    our_last_reply_at: str | None
-    reply_count: int
-    started_tracking_at: str
+class Branch:
+    """A conversation branch within a thread."""
+    our_reply_uri: str          # Our reply that created this branch
+    our_reply_url: str          # Human-readable URL
+    interlocutors: list[str]    # Handles of people in this branch
+    interlocutor_dids: list[str]  # DIDs of people in this branch
+    last_activity_at: str
+    message_count: int
+    topic_drift: float          # 0 = on topic, 1 = completely off topic
+    branch_score: float         # Overall branch quality score
+    
+    def to_dict(self) -> dict:
+        return {
+            "our_reply_uri": self.our_reply_uri,
+            "our_reply_url": self.our_reply_url,
+            "interlocutors": self.interlocutors,
+            "interlocutor_dids": self.interlocutor_dids,
+            "last_activity_at": self.last_activity_at,
+            "message_count": self.message_count,
+            "topic_drift": self.topic_drift,
+            "branch_score": self.branch_score
+        }
+    
+    @classmethod
+    def from_dict(cls, d: dict) -> "Branch":
+        return cls(**d)
+
+
+@dataclass
+class TrackedThread:
+    """A thread being tracked with all its branches."""
+    root_uri: str               # Root post URI
+    root_url: str               # Human-readable URL
+    root_author_handle: str
+    root_author_did: str
+    main_topics: list[str]      # Topics extracted from root post
+    root_text: str              # Original post text (for drift comparison)
+    overall_score: float        # Thread-level score
+    branches: dict[str, Branch] # Keyed by our_reply_uri
+    total_our_replies: int
+    created_at: str
+    last_activity_at: str
     cron_id: str | None = None
     enabled: bool = True
     
     def to_dict(self) -> dict:
         return {
-            "thread_uri": self.thread_uri,
-            "thread_url": self.thread_url,
-            "interlocutor_handle": self.interlocutor_handle,
-            "interlocutor_did": self.interlocutor_did,
-            "topic_summary": self.topic_summary,
-            "score": self.score,
-            "last_reply_at": self.last_reply_at,
-            "our_last_reply_at": self.our_last_reply_at,
-            "reply_count": self.reply_count,
-            "started_tracking_at": self.started_tracking_at,
+            "root_uri": self.root_uri,
+            "root_url": self.root_url,
+            "root_author_handle": self.root_author_handle,
+            "root_author_did": self.root_author_did,
+            "main_topics": self.main_topics,
+            "root_text": self.root_text,
+            "overall_score": self.overall_score,
+            "branches": {k: v.to_dict() for k, v in self.branches.items()},
+            "total_our_replies": self.total_our_replies,
+            "created_at": self.created_at,
+            "last_activity_at": self.last_activity_at,
             "cron_id": self.cron_id,
             "enabled": self.enabled
         }
     
     @classmethod
-    def from_dict(cls, d: dict) -> "ThreadInfo":
-        return cls(**d)
+    def from_dict(cls, d: dict) -> "TrackedThread":
+        branches = {k: Branch.from_dict(v) for k, v in d.get("branches", {}).items()}
+        return cls(
+            root_uri=d["root_uri"],
+            root_url=d["root_url"],
+            root_author_handle=d["root_author_handle"],
+            root_author_did=d["root_author_did"],
+            main_topics=d["main_topics"],
+            root_text=d.get("root_text", ""),
+            overall_score=d["overall_score"],
+            branches=branches,
+            total_our_replies=d.get("total_our_replies", 0),
+            created_at=d["created_at"],
+            last_activity_at=d["last_activity_at"],
+            cron_id=d.get("cron_id"),
+            enabled=d.get("enabled", True)
+        )
 
 
 @dataclass
@@ -112,7 +162,6 @@ def load_threads_state() -> dict:
 def save_threads_state(state: dict):
     """Save thread tracking state."""
     THREADS_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
-    # Keep only last 500 evaluated notifications
     state["evaluated_notifications"] = state.get("evaluated_notifications", [])[-500:]
     THREADS_STATE_FILE.write_text(json.dumps(state, indent=2))
 
@@ -187,18 +236,51 @@ def uri_to_url(uri: str) -> str:
 
 
 # ============================================================================
+# TOPIC ANALYSIS
+# ============================================================================
+
+def extract_topics(text: str) -> list[str]:
+    """Extract relevant topics from text."""
+    text_lower = text.lower()
+    return [t for t in RELEVANT_TOPICS if t.lower() in text_lower]
+
+
+def calculate_topic_drift(root_text: str, branch_text: str) -> float:
+    """
+    Calculate how much a branch has drifted from the root topic.
+    Returns 0-1 where 0 = on topic, 1 = completely off topic.
+    """
+    root_topics = set(t.lower() for t in extract_topics(root_text))
+    branch_topics = set(t.lower() for t in extract_topics(branch_text))
+    
+    if not root_topics:
+        # No clear topics in root - can't measure drift
+        return 0.0
+    
+    if not branch_topics:
+        # Branch has no recognizable topics - moderate drift
+        return 0.5
+    
+    # Calculate overlap
+    overlap = len(root_topics & branch_topics)
+    total = len(root_topics | branch_topics)
+    
+    if total == 0:
+        return 0.5
+    
+    similarity = overlap / total
+    return 1.0 - similarity  # Convert similarity to drift
+
+
+# ============================================================================
 # SCORING
 # ============================================================================
 
 def score_interlocutor(profile: InterlocutorProfile) -> tuple[float, list[str]]:
-    """
-    Score an interlocutor based on their profile.
-    Returns (score 0-40, list of reasons).
-    """
+    """Score an interlocutor (0-40 scale)."""
     score = 0.0
     reasons = []
     
-    # Follower count (log scale, capped)
     if profile.followers_count >= 10000:
         score += 15
         reasons.append(f"high followers ({profile.followers_count})")
@@ -209,7 +291,6 @@ def score_interlocutor(profile: InterlocutorProfile) -> tuple[float, list[str]]:
         score += 5
         reasons.append(f"modest followers ({profile.followers_count})")
     
-    # Engagement ratio (followers/following) - higher = more authority
     if profile.follows_count > 0:
         ratio = profile.followers_count / profile.follows_count
         if ratio >= 5:
@@ -219,7 +300,6 @@ def score_interlocutor(profile: InterlocutorProfile) -> tuple[float, list[str]]:
             score += 5
             reasons.append(f"good authority ratio ({ratio:.1f})")
     
-    # Active poster
     if profile.posts_count >= 1000:
         score += 5
         reasons.append("very active poster")
@@ -227,151 +307,226 @@ def score_interlocutor(profile: InterlocutorProfile) -> tuple[float, list[str]]:
         score += 3
         reasons.append("active poster")
     
-    # Bio relevance
     bio_lower = profile.description.lower()
     topic_matches = sum(1 for t in RELEVANT_TOPICS if t.lower() in bio_lower)
     if topic_matches >= 3:
         score += 10
-        reasons.append(f"highly relevant bio ({topic_matches} topic matches)")
+        reasons.append(f"highly relevant bio ({topic_matches} topics)")
     elif topic_matches >= 1:
         score += 5
-        reasons.append(f"relevant bio ({topic_matches} topic matches)")
+        reasons.append(f"relevant bio ({topic_matches} topics)")
     
     return min(score, 40), reasons
 
 
 def score_topic_relevance(text: str) -> tuple[float, list[str]]:
-    """
-    Score topic relevance of thread content.
-    Returns (score 0-30, list of reasons).
-    """
-    text_lower = text.lower()
-    matches = [t for t in RELEVANT_TOPICS if t.lower() in text_lower]
+    """Score topic relevance (0-30 scale)."""
+    matches = extract_topics(text)
     
     if len(matches) >= 4:
-        return 30, [f"highly relevant topics: {', '.join(matches[:5])}"]
+        return 30, [f"highly relevant: {', '.join(matches[:5])}"]
     elif len(matches) >= 2:
-        return 20, [f"relevant topics: {', '.join(matches)}"]
+        return 20, [f"relevant: {', '.join(matches)}"]
     elif len(matches) >= 1:
         return 10, [f"some relevance: {matches[0]}"]
     
     return 0, ["no obvious topic match"]
 
 
-def score_thread_dynamics(reply_count: int, thread_depth: int, our_replies: int) -> tuple[float, list[str]]:
-    """
-    Score thread dynamics (engagement level, depth, our investment).
-    Returns (score 0-30, list of reasons).
-    """
+def score_thread_dynamics(total_replies: int, our_replies: int, branch_count: int) -> tuple[float, list[str]]:
+    """Score thread dynamics (0-30 scale)."""
     score = 0.0
     reasons = []
     
-    # Thread depth (deeper = more invested conversation)
-    if thread_depth >= 10:
-        score += 15
-        reasons.append(f"deep thread ({thread_depth} levels)")
-    elif thread_depth >= 5:
-        score += 10
-        reasons.append(f"good depth ({thread_depth} levels)")
-    elif thread_depth >= 3:
-        score += 5
-        reasons.append(f"developing thread ({thread_depth} levels)")
-    
-    # Our investment
     if our_replies >= 3:
-        score += 10
+        score += 15
         reasons.append(f"heavily invested ({our_replies} replies)")
     elif our_replies >= 1:
-        score += 5
+        score += 8
         reasons.append(f"invested ({our_replies} replies)")
     
-    # Activity level (but not too crowded)
-    if 3 <= reply_count <= 20:
+    if branch_count >= 3:
+        score += 10
+        reasons.append(f"multi-branch conversation ({branch_count} branches)")
+    elif branch_count >= 2:
+        score += 5
+        reasons.append(f"branching conversation ({branch_count} branches)")
+    
+    if 3 <= total_replies <= 30:
         score += 5
         reasons.append("active but not crowded")
-    elif reply_count > 20:
-        reasons.append("crowded thread (penalty)")
+    elif total_replies > 30:
+        reasons.append("crowded thread")
         score -= 5
     
     return max(0, min(score, 30)), reasons
 
 
-def evaluate_thread(
-    pds: str, 
-    jwt: str, 
-    our_did: str,
-    thread_uri: str,
-    interlocutor_did: str
-) -> tuple[float, ThreadInfo | None, list[str]]:
+def score_branch(branch: Branch, main_topics: list[str], profiles: dict[str, InterlocutorProfile]) -> float:
     """
-    Evaluate a thread for importance.
-    Returns (score 0-100, ThreadInfo if worth tracking, reasons).
+    Score a branch for response priority.
+    Returns 0-100 where higher = more worth responding to.
     """
-    reasons = []
+    score = 0.0
     
-    # Get interlocutor profile
-    profile = get_profile(pds, jwt, interlocutor_did)
-    if not profile:
-        return 0, None, ["could not fetch interlocutor profile"]
+    # Topic alignment (0-40)
+    topic_score = 40 * (1 - branch.topic_drift)
+    score += topic_score
     
-    # Get thread data
-    thread = get_thread(pds, jwt, thread_uri)
+    # Interlocutor quality (0-30) - average of all interlocutors
+    interlocutor_scores = []
+    for did in branch.interlocutor_dids:
+        if did in profiles:
+            int_score, _ = score_interlocutor(profiles[did])
+            interlocutor_scores.append(int_score)
+    if interlocutor_scores:
+        score += (sum(interlocutor_scores) / len(interlocutor_scores)) * 0.75  # Scale to 0-30
+    
+    # Activity (0-20)
+    if branch.message_count >= 5:
+        score += 20
+    elif branch.message_count >= 3:
+        score += 15
+    elif branch.message_count >= 2:
+        score += 10
+    
+    # Recency (0-10)
+    try:
+        last = datetime.fromisoformat(branch.last_activity_at.replace("Z", "+00:00"))
+        age_hours = (datetime.now(timezone.utc) - last).total_seconds() / 3600
+        if age_hours < 1:
+            score += 10
+        elif age_hours < 6:
+            score += 5
+    except Exception:
+        pass
+    
+    return min(score, 100)
+
+
+# ============================================================================
+# THREAD ANALYSIS
+# ============================================================================
+
+def analyze_thread(pds: str, jwt: str, our_did: str, root_uri: str) -> TrackedThread | None:
+    """
+    Fully analyze a thread, extracting all branches we're involved in.
+    """
+    thread = get_thread(pds, jwt, root_uri, depth=20)
     if not thread:
-        return 0, None, ["could not fetch thread"]
+        return None
     
-    # Calculate thread depth and collect text
-    def walk_thread(node: dict, depth: int = 0) -> tuple[int, str, int, str | None]:
-        """Walk thread, return (max_depth, all_text, our_reply_count, last_reply_at)."""
+    root_post = thread.get("post", {})
+    root_record = root_post.get("record", {})
+    root_text = root_record.get("text", "")
+    root_author = root_post.get("author", {})
+    
+    main_topics = extract_topics(root_text)
+    branches: dict[str, Branch] = {}
+    our_reply_uris: list[str] = []
+    all_interlocutor_dids: set[str] = set()
+    latest_activity = root_record.get("createdAt", "")
+    
+    def walk_thread(node: dict, parent_is_ours: bool = False, branch_key: str | None = None):
+        """Recursively walk thread to find our replies and track branches."""
+        nonlocal latest_activity
+        
         post = node.get("post", {})
-        text = post.get("record", {}).get("text", "")
-        created = post.get("record", {}).get("createdAt", "")
-        is_ours = post.get("author", {}).get("did") == our_did
+        record = post.get("record", {})
+        author = post.get("author", {})
+        uri = post.get("uri", "")
+        created = record.get("createdAt", "")
+        text = record.get("text", "")
+        author_did = author.get("did", "")
+        author_handle = author.get("handle", "")
+        is_ours = author_did == our_did
         
-        max_depth = depth
-        all_text = text
-        our_count = 1 if is_ours else 0
-        last_reply = created
+        if created and created > latest_activity:
+            latest_activity = created
         
+        # If this is our reply, it starts or continues a branch
+        if is_ours:
+            our_reply_uris.append(uri)
+            if uri not in branches:
+                branches[uri] = Branch(
+                    our_reply_uri=uri,
+                    our_reply_url=uri_to_url(uri),
+                    interlocutors=[],
+                    interlocutor_dids=[],
+                    last_activity_at=created,
+                    message_count=1,
+                    topic_drift=0.0,
+                    branch_score=0.0
+                )
+            branch_key = uri
+        elif branch_key and branch_key in branches:
+            # This is a reply to one of our branches
+            branch = branches[branch_key]
+            if author_handle and author_handle not in branch.interlocutors:
+                branch.interlocutors.append(author_handle)
+            if author_did and author_did not in branch.interlocutor_dids:
+                branch.interlocutor_dids.append(author_did)
+                all_interlocutor_dids.add(author_did)
+            branch.message_count += 1
+            if created > branch.last_activity_at:
+                branch.last_activity_at = created
+            # Accumulate text for topic drift calculation
+            if not hasattr(branch, '_accumulated_text'):
+                branch._accumulated_text = ""
+            branch._accumulated_text += " " + text
+        
+        # Recurse into replies
         for reply in node.get("replies", []):
-            rd, rt, rc, rla = walk_thread(reply, depth + 1)
-            max_depth = max(max_depth, rd)
-            all_text += " " + rt
-            our_count += rc
-            if rla and rla > last_reply:
-                last_reply = rla
-        
-        return max_depth, all_text, our_count, last_reply
+            walk_thread(reply, parent_is_ours=is_ours, branch_key=branch_key)
     
-    thread_depth, thread_text, our_replies, last_reply_at = walk_thread(thread)
-    total_replies = thread.get("post", {}).get("replyCount", 0)
+    walk_thread(thread)
     
-    # Score components
-    interlocutor_score, int_reasons = score_interlocutor(profile)
-    reasons.extend(int_reasons)
+    # Calculate topic drift for each branch
+    for branch in branches.values():
+        branch_text = getattr(branch, '_accumulated_text', "")
+        branch.topic_drift = calculate_topic_drift(root_text, branch_text)
+        # Clean up temp attribute
+        if hasattr(branch, '_accumulated_text'):
+            delattr(branch, '_accumulated_text')
     
-    topic_score, topic_reasons = score_topic_relevance(thread_text)
-    reasons.extend(topic_reasons)
+    # Fetch interlocutor profiles for scoring
+    profiles: dict[str, InterlocutorProfile] = {}
+    for did in all_interlocutor_dids:
+        profile = get_profile(pds, jwt, did)
+        if profile:
+            profiles[did] = profile
     
-    dynamics_score, dyn_reasons = score_thread_dynamics(total_replies, thread_depth, our_replies)
-    reasons.extend(dyn_reasons)
+    # Score branches
+    for branch in branches.values():
+        branch.branch_score = score_branch(branch, main_topics, profiles)
     
-    total_score = interlocutor_score + topic_score + dynamics_score
+    # Calculate overall thread score
+    total_replies = root_post.get("replyCount", 0)
     
-    # Build ThreadInfo
-    thread_info = ThreadInfo(
-        thread_uri=thread_uri,
-        thread_url=uri_to_url(thread_uri),
-        interlocutor_handle=profile.handle,
-        interlocutor_did=profile.did,
-        topic_summary=", ".join([t for t in RELEVANT_TOPICS if t.lower() in thread_text.lower()][:3]) or "general",
-        score=total_score,
-        last_reply_at=last_reply_at or datetime.now(timezone.utc).isoformat(),
-        our_last_reply_at=None,  # Would need more logic to track
-        reply_count=total_replies,
-        started_tracking_at=datetime.now(timezone.utc).isoformat()
+    # Get root author profile for scoring
+    root_profile = get_profile(pds, jwt, root_author.get("did", ""))
+    interlocutor_score = 0
+    if root_profile:
+        interlocutor_score, _ = score_interlocutor(root_profile)
+    
+    topic_score, _ = score_topic_relevance(root_text)
+    dynamics_score, _ = score_thread_dynamics(total_replies, len(our_reply_uris), len(branches))
+    
+    overall_score = interlocutor_score + topic_score + dynamics_score
+    
+    return TrackedThread(
+        root_uri=root_uri,
+        root_url=uri_to_url(root_uri),
+        root_author_handle=root_author.get("handle", "unknown"),
+        root_author_did=root_author.get("did", ""),
+        main_topics=main_topics,
+        root_text=root_text[:500],
+        overall_score=overall_score,
+        branches=branches,
+        total_our_replies=len(our_reply_uris),
+        created_at=root_record.get("createdAt", ""),
+        last_activity_at=latest_activity
     )
-    
-    return total_score, thread_info, reasons
 
 
 # ============================================================================
@@ -379,31 +534,49 @@ def evaluate_thread(
 # ============================================================================
 
 def generate_cron_config(
-    thread_info: ThreadInfo,
+    thread: TrackedThread,
     interval_minutes: int = 10,
     silence_hours: int = DEFAULT_SILENCE_HOURS,
-    telegram_to: str = "843819294"
+    telegram_to: str = "843819294",
+    key_facts: str = ""
 ) -> dict:
-    """
-    Generate OpenClaw cron configuration for thread monitoring.
-    """
-    message = f"""Check BlueSky notifications for replies to the thread at {thread_info.thread_url}
+    """Generate OpenClaw cron configuration for thread monitoring."""
+    
+    # List active branches
+    branch_info = []
+    for uri, branch in thread.branches.items():
+        if branch.branch_score >= 40:  # Only mention worthwhile branches
+            drift_status = "on-topic" if branch.topic_drift < 0.3 else "drifting" if branch.topic_drift < 0.7 else "off-topic"
+            branch_info.append(f"  - @{', @'.join(branch.interlocutors[:3])} ({drift_status}, score {branch.branch_score:.0f})")
+    
+    branches_text = "\n".join(branch_info) if branch_info else "  (no active branches yet)"
+    
+    message = f"""Check BlueSky notifications for the thread at {thread.root_url}
 
-Interlocutor: @{thread_info.interlocutor_handle}
-Topics: {thread_info.topic_summary}
+**THREAD INFO:**
+- Root author: @{thread.root_author_handle}
+- Topics: {', '.join(thread.main_topics) or 'general'}
+- Our replies: {thread.total_our_replies}
+- Branches:
+{branches_text}
 
-If there's a new reply needing response:
-1. Read ~/personas/echo/data/bsky-guidelines.md for tone/style
-2. Craft a thoughtful reply (max 300 chars) continuing the conversation
-3. Post the reply using: ~/scripts/bsky reply "<post_url>" "<text>"
-4. Report what you did
+{f"**KEY FACTS:**{chr(10)}{key_facts}{chr(10)}" if key_facts else ""}
+**INSTRUCTIONS:**
+1. Check for new replies to any of our posts in this thread
+2. For each reply, evaluate the branch:
+   - If topic drift > 0.7, skip it (conversation has derailed)
+   - If branch score < 40, lower priority
+3. Read ~/personas/echo/data/bsky-guidelines.md for tone/style
+4. Craft thoughtful replies (max 300 chars) to worthy branches
+5. STAY FACTUAL - don't make claims you're not sure about
+6. Post replies and report what you did
 
-If no new replies, just say 'No new replies in {thread_info.interlocutor_handle} thread.'
+If no new activity, just say 'No new replies in {thread.root_author_handle} thread.'
 
 If no replies for {silence_hours}+ hours, disable this cron as the conversation has likely concluded."""
 
     return {
-        "name": f"bsky-thread-{thread_info.interlocutor_handle[:20]}",
+        "name": f"bsky-thread-{thread.root_author_handle[:20]}",
         "schedule": {
             "kind": "every",
             "everyMs": interval_minutes * 60 * 1000
@@ -452,42 +625,51 @@ def cmd_evaluate(args) -> int:
         print("No new threads to evaluate.")
         return 0
     
-    print("\n📊 Evaluating threads...\n")
+    print("\n📊 Analyzing threads...\n")
     
-    high_value_threads = []
-    seen_threads = set()  # Deduplicate by root URI
-    
+    # Group by root URI to avoid duplicate analysis
+    root_uris: dict[str, list[dict]] = {}
     for n in candidates:
-        uri = n.get("uri", "")
-        author_did = n.get("author", {}).get("did", "")
-        author_handle = n.get("author", {}).get("handle", "unknown")
-        
-        # Find the root URI (thread start)
         record = n.get("record", {})
         reply_ref = record.get("reply", {})
-        root_uri = reply_ref.get("root", {}).get("uri", uri)
+        root_uri = reply_ref.get("root", {}).get("uri") or n.get("uri", "")
+        root_uris.setdefault(root_uri, []).append(n)
+    
+    high_value_threads: list[TrackedThread] = []
+    
+    for root_uri, notifs in root_uris.items():
+        print(f"Analyzing thread: {uri_to_url(root_uri)[:60]}...")
         
-        score, thread_info, reasons = evaluate_thread(pds, jwt, did, root_uri, author_did)
+        thread = analyze_thread(pds, jwt, did, root_uri)
+        if not thread:
+            print("  ✗ Could not fetch thread")
+            continue
         
-        print(f"@{author_handle}: score {score:.0f}/100")
-        for r in reasons[:3]:
-            print(f"  • {r}")
+        print(f"  @{thread.root_author_handle}: score {thread.overall_score:.0f}/100")
+        print(f"  Topics: {', '.join(thread.main_topics) or 'general'}")
+        print(f"  Branches: {len(thread.branches)}, Our replies: {thread.total_our_replies}")
         
-        if score >= CRON_THRESHOLD and thread_info:
-            if root_uri not in seen_threads:
-                # Check minimum thread depth (root → reply → reply = 3)
-                if thread_info.reply_count >= MIN_THREAD_DEPTH - 1:  # reply_count doesn't include root
-                    high_value_threads.append(thread_info)
-                    seen_threads.add(root_uri)
-                    print(f"  ⭐ HIGH VALUE - recommend cron monitoring")
-                else:
-                    print(f"  ⭐ HIGH VALUE (too shallow: {thread_info.reply_count + 1}/{MIN_THREAD_DEPTH} msgs)")
+        # Show branch details
+        for uri, branch in thread.branches.items():
+            drift_pct = int(branch.topic_drift * 100)
+            print(f"    └─ @{', @'.join(branch.interlocutors[:2]) or 'unknown'}: "
+                  f"drift {drift_pct}%, score {branch.branch_score:.0f}")
+        
+        # Check if thread qualifies for cron
+        if thread.overall_score >= CRON_THRESHOLD:
+            if thread.total_our_replies >= MIN_THREAD_DEPTH - 1:
+                high_value_threads.append(thread)
+                print(f"  ⭐ HIGH VALUE - recommend cron monitoring")
             else:
-                print(f"  ⭐ HIGH VALUE (already tracked)")
+                print(f"  ⭐ HIGH VALUE (too shallow: {thread.total_our_replies + 1}/{MIN_THREAD_DEPTH} exchanges)")
         print()
         
-        # Mark as evaluated
-        state.setdefault("evaluated_notifications", []).append(uri)
+        # Mark notifications as evaluated
+        for n in notifs:
+            state.setdefault("evaluated_notifications", []).append(n.get("uri", ""))
+        
+        # Save thread to state
+        state.setdefault("threads", {})[root_uri] = thread.to_dict()
     
     # Output high-value threads
     if high_value_threads:
@@ -496,18 +678,16 @@ def cmd_evaluate(args) -> int:
         print(f"{'='*60}\n")
         
         for t in high_value_threads:
-            print(f"Thread: {t.thread_url}")
-            print(f"Interlocutor: @{t.interlocutor_handle}")
-            print(f"Topics: {t.topic_summary}")
-            print(f"Score: {t.score:.0f}/100")
+            print(f"Thread: {t.root_url}")
+            print(f"Root author: @{t.root_author_handle}")
+            print(f"Topics: {', '.join(t.main_topics) or 'general'}")
+            print(f"Score: {t.overall_score:.0f}/100")
+            print(f"Branches: {len(t.branches)}")
             
             if args.json:
                 cron_config = generate_cron_config(t, silence_hours=args.silence_hours)
                 print(f"Cron config:\n{json.dumps(cron_config, indent=2)}")
             print()
-            
-            # Add to tracked threads
-            state.setdefault("threads", {})[t.thread_uri] = t.to_dict()
     
     state["last_evaluation"] = datetime.now(timezone.utc).isoformat()
     save_threads_state(state)
@@ -519,23 +699,32 @@ def cmd_evaluate(args) -> int:
 def cmd_list(args) -> int:
     """List tracked threads."""
     state = load_threads_state()
-    threads = state.get("threads", {})
+    threads_data = state.get("threads", {})
     
-    if not threads:
+    if not threads_data:
         print("No threads being tracked.")
         return 0
     
-    print(f"📋 Tracked Threads ({len(threads)})\n")
+    print(f"📋 Tracked Threads ({len(threads_data)})\n")
     
-    for uri, t in threads.items():
-        info = ThreadInfo.from_dict(t)
-        status = "✓" if info.enabled else "⏸"
-        print(f"{status} @{info.interlocutor_handle} (score: {info.score:.0f})")
-        print(f"  {info.thread_url}")
-        print(f"  Topics: {info.topic_summary}")
-        print(f"  Last reply: {info.last_reply_at}")
-        if info.cron_id:
-            print(f"  Cron: {info.cron_id}")
+    for uri, t_data in threads_data.items():
+        t = TrackedThread.from_dict(t_data)
+        status = "✓" if t.enabled else "⏸"
+        print(f"{status} @{t.root_author_handle} (score: {t.overall_score:.0f})")
+        print(f"  {t.root_url}")
+        print(f"  Topics: {', '.join(t.main_topics) or 'general'}")
+        print(f"  Branches: {len(t.branches)}, Our replies: {t.total_our_replies}")
+        print(f"  Last activity: {t.last_activity_at}")
+        
+        # Show branches
+        for branch_uri, branch in t.branches.items():
+            drift_pct = int(branch.topic_drift * 100)
+            print(f"    └─ @{', @'.join(branch.interlocutors[:2]) or '?'}: "
+                  f"drift {drift_pct}%, score {branch.branch_score:.0f}, "
+                  f"{branch.message_count} msgs")
+        
+        if t.cron_id:
+            print(f"  Cron: {t.cron_id}")
         print()
     
     return 0
@@ -552,38 +741,37 @@ def cmd_watch(args) -> int:
     if m:
         uri = f"at://{m.group(1)}/app.bsky.feed.post/{m.group(2)}"
     else:
-        uri = url  # Assume it's already a URI
+        uri = url
     
-    # Get thread to find interlocutor
-    thread = get_thread(pds, jwt, uri)
+    print(f"📊 Analyzing thread...")
+    thread = analyze_thread(pds, jwt, did, uri)
+    
     if not thread:
         print(f"❌ Could not fetch thread: {url}")
         return 1
     
-    author_did = thread.get("post", {}).get("author", {}).get("did", "")
-    if not author_did:
-        print("❌ Could not determine thread author")
-        return 1
+    print(f"\nThread: {thread.root_url}")
+    print(f"Root author: @{thread.root_author_handle}")
+    print(f"Topics: {', '.join(thread.main_topics) or 'general'}")
+    print(f"Score: {thread.overall_score:.0f}/100")
+    print(f"Branches: {len(thread.branches)}, Our replies: {thread.total_our_replies}")
     
-    print(f"📊 Evaluating thread...")
-    score, thread_info, reasons = evaluate_thread(pds, jwt, did, uri, author_did)
+    for branch_uri, branch in thread.branches.items():
+        drift_pct = int(branch.topic_drift * 100)
+        print(f"  └─ @{', @'.join(branch.interlocutors[:2]) or '?'}: "
+              f"drift {drift_pct}%, score {branch.branch_score:.0f}")
     
-    print(f"\nScore: {score:.0f}/100")
-    for r in reasons:
-        print(f"  • {r}")
+    # Save to state
+    state = load_threads_state()
+    state.setdefault("threads", {})[uri] = thread.to_dict()
+    save_threads_state(state)
     
-    if thread_info:
-        # Save to state
-        state = load_threads_state()
-        state.setdefault("threads", {})[uri] = thread_info.to_dict()
-        save_threads_state(state)
-        
-        print(f"\n✓ Now tracking thread with @{thread_info.interlocutor_handle}")
-        
-        # Output cron config
-        cron_config = generate_cron_config(thread_info, silence_hours=args.silence_hours)
-        print(f"\nCron configuration:")
-        print(json.dumps(cron_config, indent=2))
+    print(f"\n✓ Now tracking thread")
+    
+    # Output cron config
+    cron_config = generate_cron_config(thread, silence_hours=args.silence_hours)
+    print(f"\nCron configuration:")
+    print(json.dumps(cron_config, indent=2))
     
     return 0
 
@@ -593,12 +781,13 @@ def cmd_unwatch(args) -> int:
     state = load_threads_state()
     threads = state.get("threads", {})
     
-    # Find thread by URL or handle
     target = args.target
     found_uri = None
     
-    for uri, t in threads.items():
-        if target in uri or target in t.get("thread_url", "") or target == t.get("interlocutor_handle"):
+    for uri, t_data in threads.items():
+        if (target in uri or 
+            target in t_data.get("root_url", "") or 
+            target == t_data.get("root_author_handle")):
             found_uri = uri
             break
     
@@ -606,13 +795,65 @@ def cmd_unwatch(args) -> int:
         print(f"❌ Thread not found: {target}")
         return 1
     
-    info = threads[found_uri]
+    t_data = threads[found_uri]
     del state["threads"][found_uri]
     save_threads_state(state)
     
-    print(f"✓ Stopped tracking thread with @{info.get('interlocutor_handle')}")
-    if info.get("cron_id"):
-        print(f"  Note: Cron {info['cron_id']} should be disabled separately")
+    print(f"✓ Stopped tracking thread with @{t_data.get('root_author_handle')}")
+    if t_data.get("cron_id"):
+        print(f"  Note: Cron {t_data['cron_id']} should be disabled separately")
+    
+    return 0
+
+
+def cmd_check_branches(args) -> int:
+    """Check branch relevance for a tracked thread."""
+    print("🔗 Connecting to BlueSky...")
+    pds, did, jwt, handle = get_session()
+    
+    state = load_threads_state()
+    threads = state.get("threads", {})
+    
+    # Find thread
+    target = args.target
+    found_uri = None
+    for uri, t_data in threads.items():
+        if (target in uri or 
+            target in t_data.get("root_url", "") or 
+            target == t_data.get("root_author_handle")):
+            found_uri = uri
+            break
+    
+    if not found_uri:
+        print(f"❌ Thread not found: {target}")
+        return 1
+    
+    print(f"📊 Re-analyzing thread...")
+    thread = analyze_thread(pds, jwt, did, found_uri)
+    
+    if not thread:
+        print("❌ Could not fetch thread")
+        return 1
+    
+    print(f"\nThread: {thread.root_url}")
+    print(f"Topics: {', '.join(thread.main_topics) or 'general'}")
+    print(f"\nBranch Analysis:")
+    print("-" * 50)
+    
+    for branch_uri, branch in thread.branches.items():
+        drift_pct = int(branch.topic_drift * 100)
+        status = "✓ RESPOND" if branch.topic_drift < MAX_TOPIC_DRIFT and branch.branch_score >= 40 else "⏭ SKIP"
+        
+        print(f"\n{status} Branch with @{', @'.join(branch.interlocutors[:3]) or 'unknown'}")
+        print(f"  URL: {branch.our_reply_url}")
+        print(f"  Messages: {branch.message_count}")
+        print(f"  Topic drift: {drift_pct}% {'(off-topic)' if drift_pct >= 70 else '(on-topic)' if drift_pct < 30 else '(drifting)'}")
+        print(f"  Branch score: {branch.branch_score:.0f}/100")
+        print(f"  Last activity: {branch.last_activity_at}")
+    
+    # Update state
+    state["threads"][found_uri] = thread.to_dict()
+    save_threads_state(state)
     
     return 0
 
@@ -627,6 +868,8 @@ def run(args) -> int:
         return cmd_watch(args)
     elif args.threads_command == "unwatch":
         return cmd_unwatch(args)
+    elif args.threads_command == "branches":
+        return cmd_check_branches(args)
     else:
         print("Unknown threads command")
         return 2

@@ -134,6 +134,10 @@ EXAMPLES:
     # threads unwatch
     threads_unwatch = threads_sub.add_parser("unwatch", help="Stop watching a thread")
     threads_unwatch.add_argument("target", help="Thread URL, URI, or interlocutor handle")
+    
+    # threads branches
+    threads_branches = threads_sub.add_parser("branches", help="Check branch relevance for a thread")
+    threads_branches.add_argument("target", help="Thread URL, URI, or root author handle")
 
     args = parser.parse_args(argv)
 
