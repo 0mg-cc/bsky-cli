@@ -938,7 +938,53 @@ def cmd_backoff_check(args) -> int:
     - If no new activity: 10 → 20 → 40 → 80 → 160 → 240 minutes
     - After 240 min with no activity: one final check at 18h, then disable
     - If new activity detected: reset to 10 minutes
+    
+    IMPORTANT: Even during backoff, we peek at notifications. If new activity
+    is detected, we reset backoff and proceed with check immediately.
     """
+    # First, peek at notifications to detect new activity during backoff
+    try:
+        pds, did, jwt, handle = get_session()
+        notifications = get_notifications(pds, jwt, limit=20)
+        
+        # Check for recent replies/mentions (last 10 minutes)
+        recent_cutoff = datetime.now(timezone.utc) - timedelta(minutes=10)
+        new_activity = False
+        
+        for n in notifications:
+            if n.get("reason") not in ("reply", "mention", "quote"):
+                continue
+            indexed = n.get("indexedAt", "")
+            if indexed:
+                try:
+                    ts = datetime.fromisoformat(indexed.replace("Z", "+00:00"))
+                    if ts > recent_cutoff:
+                        new_activity = True
+                        print(f"🔔 New activity detected! Resetting backoff...")
+                        break
+                except Exception:
+                    pass
+        
+        if new_activity:
+            # Reset backoff and proceed with check
+            state = load_threads_state()
+            threads = state.get("threads", {})
+            target = args.target
+            for uri, t_data in threads.items():
+                if (target in uri or 
+                    target in t_data.get("root_url", "") or 
+                    target == t_data.get("root_author_handle")):
+                    t_data["backoff_level"] = 0
+                    t_data["last_new_activity_at"] = datetime.now(timezone.utc).isoformat()
+                    state["threads"][uri] = t_data
+                    save_threads_state(state)
+                    break
+            print(f"✓ CHECK - New activity, backoff reset to 0")
+            return 0
+    except Exception as e:
+        # If notification check fails, fall through to normal backoff logic
+        print(f"⚠️ Could not check notifications: {e}")
+    
     state = load_threads_state()
     threads = state.get("threads", {})
     
