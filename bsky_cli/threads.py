@@ -95,6 +95,8 @@ class TrackedThread:
     total_our_replies: int
     created_at: str
     last_activity_at: str
+    engaged_interlocutors: list[str] = field(default_factory=list)  # DIDs we've replied to
+    our_reply_texts: list[str] = field(default_factory=list)  # Our replies for consistency check
     cron_id: str | None = None
     enabled: bool = True
     
@@ -111,6 +113,8 @@ class TrackedThread:
             "total_our_replies": self.total_our_replies,
             "created_at": self.created_at,
             "last_activity_at": self.last_activity_at,
+            "engaged_interlocutors": self.engaged_interlocutors,
+            "our_reply_texts": self.our_reply_texts,
             "cron_id": self.cron_id,
             "enabled": self.enabled
         }
@@ -130,6 +134,8 @@ class TrackedThread:
             total_our_replies=d.get("total_our_replies", 0),
             created_at=d["created_at"],
             last_activity_at=d["last_activity_at"],
+            engaged_interlocutors=d.get("engaged_interlocutors", []),
+            our_reply_texts=d.get("our_reply_texts", []),
             cron_id=d.get("cron_id"),
             enabled=d.get("enabled", True)
         )
@@ -362,16 +368,33 @@ def score_thread_dynamics(total_replies: int, our_replies: int, branch_count: in
     return max(0, min(score, 30)), reasons
 
 
-def score_branch(branch: Branch, main_topics: list[str], profiles: dict[str, InterlocutorProfile]) -> float:
+def score_branch(
+    branch: Branch, 
+    main_topics: list[str], 
+    profiles: dict[str, InterlocutorProfile],
+    engaged_interlocutors: set[str] | None = None
+) -> float:
     """
     Score a branch for response priority.
     Returns 0-100 where higher = more worth responding to.
+    
+    If engaged_interlocutors is provided, topic drift is ignored for
+    interlocutors we've already engaged with (conversations evolve naturally).
     """
     score = 0.0
     
-    # Topic alignment (0-40)
-    topic_score = 40 * (1 - branch.topic_drift)
-    score += topic_score
+    # Check if we've already engaged with this interlocutor in this thread
+    already_engaged = False
+    if engaged_interlocutors:
+        already_engaged = bool(set(branch.interlocutor_dids) & engaged_interlocutors)
+    
+    # Topic alignment (0-40) - BUT skip this penalty for engaged interlocutors
+    if already_engaged:
+        # Give full topic points - we're in an ongoing conversation
+        score += 40
+    else:
+        topic_score = 40 * (1 - branch.topic_drift)
+        score += topic_score
     
     # Interlocutor quality (0-30) - average of all interlocutors
     interlocutor_scores = []
@@ -424,10 +447,12 @@ def analyze_thread(pds: str, jwt: str, our_did: str, root_uri: str) -> TrackedTh
     main_topics = extract_topics(root_text)
     branches: dict[str, Branch] = {}
     our_reply_uris: list[str] = []
+    our_reply_texts: list[str] = []  # For consistency checking
     all_interlocutor_dids: set[str] = set()
+    engaged_interlocutors: set[str] = set()  # People we've replied to
     latest_activity = root_record.get("createdAt", "")
     
-    def walk_thread(node: dict, parent_is_ours: bool = False, branch_key: str | None = None):
+    def walk_thread(node: dict, parent_is_ours: bool = False, branch_key: str | None = None, parent_author_did: str | None = None):
         """Recursively walk thread to find our replies and track branches."""
         nonlocal latest_activity
         
@@ -447,6 +472,10 @@ def analyze_thread(pds: str, jwt: str, our_did: str, root_uri: str) -> TrackedTh
         # If this is our reply, it starts or continues a branch
         if is_ours:
             our_reply_uris.append(uri)
+            our_reply_texts.append(text)  # Track our text for consistency
+            # Track who we're engaging with
+            if parent_author_did and parent_author_did != our_did:
+                engaged_interlocutors.add(parent_author_did)
             if uri not in branches:
                 branches[uri] = Branch(
                     our_reply_uri=uri,
@@ -477,7 +506,7 @@ def analyze_thread(pds: str, jwt: str, our_did: str, root_uri: str) -> TrackedTh
         
         # Recurse into replies
         for reply in node.get("replies", []):
-            walk_thread(reply, parent_is_ours=is_ours, branch_key=branch_key)
+            walk_thread(reply, parent_is_ours=is_ours, branch_key=branch_key, parent_author_did=author_did)
     
     walk_thread(thread)
     
@@ -496,9 +525,9 @@ def analyze_thread(pds: str, jwt: str, our_did: str, root_uri: str) -> TrackedTh
         if profile:
             profiles[did] = profile
     
-    # Score branches
+    # Score branches (pass engaged_interlocutors to relax drift for ongoing conversations)
     for branch in branches.values():
-        branch.branch_score = score_branch(branch, main_topics, profiles)
+        branch.branch_score = score_branch(branch, main_topics, profiles, engaged_interlocutors)
     
     # Calculate overall thread score
     total_replies = root_post.get("replyCount", 0)
@@ -525,7 +554,9 @@ def analyze_thread(pds: str, jwt: str, our_did: str, root_uri: str) -> TrackedTh
         branches=branches,
         total_our_replies=len(our_reply_uris),
         created_at=root_record.get("createdAt", ""),
-        last_activity_at=latest_activity
+        last_activity_at=latest_activity,
+        engaged_interlocutors=list(engaged_interlocutors),
+        our_reply_texts=our_reply_texts[-10:]  # Keep last 10 for consistency checking
     )
 
 
@@ -546,10 +577,19 @@ def generate_cron_config(
     branch_info = []
     for uri, branch in thread.branches.items():
         if branch.branch_score >= 40:  # Only mention worthwhile branches
-            drift_status = "on-topic" if branch.topic_drift < 0.3 else "drifting" if branch.topic_drift < 0.7 else "off-topic"
+            is_engaged = bool(set(branch.interlocutor_dids) & set(thread.engaged_interlocutors))
+            drift_status = "engaged" if is_engaged else ("on-topic" if branch.topic_drift < 0.3 else "drifting" if branch.topic_drift < 0.7 else "off-topic")
             branch_info.append(f"  - @{', @'.join(branch.interlocutors[:3])} ({drift_status}, score {branch.branch_score:.0f})")
     
     branches_text = "\n".join(branch_info) if branch_info else "  (no active branches yet)"
+    
+    # Include recent replies for consistency checking
+    consistency_text = ""
+    if thread.our_reply_texts:
+        recent = thread.our_reply_texts[-3:]
+        consistency_text = "\n**OUR RECENT REPLIES (check consistency):**\n" + "\n".join(
+            f"  - \"{t[:80]}{'...' if len(t) > 80 else ''}\"" for t in recent
+        )
     
     message = f"""Check BlueSky notifications for the thread at {thread.root_url}
 
@@ -559,17 +599,18 @@ def generate_cron_config(
 - Our replies: {thread.total_our_replies}
 - Branches:
 {branches_text}
+{consistency_text}
 
 {f"**KEY FACTS:**{chr(10)}{key_facts}{chr(10)}" if key_facts else ""}
 **INSTRUCTIONS:**
-1. Check for new replies to any of our posts in this thread
-2. For each reply, evaluate the branch:
-   - If topic drift > 0.7, skip it (conversation has derailed)
-   - If branch score < 40, lower priority
-3. Read ~/personas/echo/data/bsky-guidelines.md for tone/style
-4. Craft thoughtful replies (max 300 chars) to worthy branches
-5. STAY FACTUAL - don't make claims you're not sure about
-6. Post replies and report what you did
+1. Run `~/scripts/bsky threads branches {thread.root_author_handle}` to see branch status
+2. For engaged interlocutors (people we've already replied to): ALWAYS respond regardless of topic drift
+3. For new interlocutors: skip if drift > 70% or score < 40
+4. **CHECK CONSISTENCY**: Read our recent replies above. Don't contradict yourself!
+5. Read ~/personas/echo/data/bsky-guidelines.md for tone/style
+6. Craft thoughtful replies (max 300 chars)
+7. STAY FACTUAL - don't make claims you're unsure about
+8. Post replies and report what you did
 
 If no new activity, just say 'No new replies in {thread.root_author_handle} thread.'
 
@@ -837,19 +878,35 @@ def cmd_check_branches(args) -> int:
     
     print(f"\nThread: {thread.root_url}")
     print(f"Topics: {', '.join(thread.main_topics) or 'general'}")
+    print(f"Engaged interlocutors: {len(thread.engaged_interlocutors)}")
     print(f"\nBranch Analysis:")
     print("-" * 50)
     
     for branch_uri, branch in thread.branches.items():
         drift_pct = int(branch.topic_drift * 100)
-        status = "✓ RESPOND" if branch.topic_drift < MAX_TOPIC_DRIFT and branch.branch_score >= 40 else "⏭ SKIP"
+        # Check if we've engaged with this interlocutor before
+        is_engaged = bool(set(branch.interlocutor_dids) & set(thread.engaged_interlocutors))
+        
+        # More permissive for engaged interlocutors
+        if is_engaged:
+            status = "✓ RESPOND (engaged)" if branch.branch_score >= 30 else "⏭ SKIP"
+        else:
+            status = "✓ RESPOND" if branch.topic_drift < MAX_TOPIC_DRIFT and branch.branch_score >= 40 else "⏭ SKIP"
         
         print(f"\n{status} Branch with @{', @'.join(branch.interlocutors[:3]) or 'unknown'}")
         print(f"  URL: {branch.our_reply_url}")
         print(f"  Messages: {branch.message_count}")
-        print(f"  Topic drift: {drift_pct}% {'(off-topic)' if drift_pct >= 70 else '(on-topic)' if drift_pct < 30 else '(drifting)'}")
+        print(f"  Topic drift: {drift_pct}%{' (ignored - engaged)' if is_engaged else ' (off-topic)' if drift_pct >= 70 else ' (on-topic)' if drift_pct < 30 else ' (drifting)'}")
         print(f"  Branch score: {branch.branch_score:.0f}/100")
         print(f"  Last activity: {branch.last_activity_at}")
+    
+    # Show our previous replies for consistency checking
+    if thread.our_reply_texts:
+        print(f"\n{'='*50}")
+        print("📝 Our previous replies (for consistency):")
+        print("-" * 50)
+        for i, text in enumerate(thread.our_reply_texts[-5:], 1):
+            print(f"{i}. {text[:100]}{'...' if len(text) > 100 else ''}")
     
     # Update state
     state["threads"][found_uri] = thread.to_dict()
