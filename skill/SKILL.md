@@ -37,6 +37,18 @@ uv run bsky post --embed https://example.com "Check this out"
 uv run bsky reply "https://bsky.app/profile/user/post/xyz" "Great point!"
 ```
 
+### Like
+```bash
+uv run bsky like "https://bsky.app/profile/user/post/xyz"
+uv run bsky like --undo "https://bsky.app/profile/user/post/xyz"  # Unlike
+```
+
+### Repost
+```bash
+uv run bsky repost "https://bsky.app/profile/user/post/xyz"
+uv run bsky repost --undo "https://bsky.app/profile/user/post/xyz"  # Remove repost
+```
+
 ### Notifications
 ```bash
 uv run bsky notify              # New notifications
