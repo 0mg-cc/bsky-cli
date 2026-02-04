@@ -72,6 +72,12 @@ EXAMPLES:
     reply_parser.add_argument("text", help="Reply text (max 300 chars)")
     reply_parser.add_argument("--dry-run", action="store_true", help="Print without posting")
 
+    # like
+    like_parser = subparsers.add_parser("like", help="Like a post")
+    like_parser.add_argument("post_url", help="URL of the post to like")
+    like_parser.add_argument("--undo", action="store_true", help="Unlike instead of like")
+    like_parser.add_argument("--dry-run", action="store_true", help="Print without acting")
+
     # dm
     dm_parser = subparsers.add_parser("dm", help="Send a direct message")
     dm_parser.add_argument("handle", help="Handle of the recipient (e.g. user.bsky.social)")
@@ -163,6 +169,8 @@ EXAMPLES:
         from .notify import run
     elif args.command == "reply":
         from .reply import run
+    elif args.command == "like":
+        from .like import run
     elif args.command == "announce":
         from .announce import run
     elif args.command == "delete":
