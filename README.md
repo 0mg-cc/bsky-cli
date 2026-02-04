@@ -9,8 +9,9 @@ A comprehensive command-line interface for BlueSky, designed for automation and 
 - **Engagement** — LLM-powered intelligent replies to interesting posts from your follows
 - **Discovery** — Find and follow relevant accounts based on interests
 - **Thread Tracking** — Monitor conversation threads with adaptive polling
+- **Interlocutor Tracking** — Remember who you've talked to, adapt tone for regulars vs new contacts
 - **Organic Posting** — Time-varied, context-aware posting (replaces dozens of crons)
-- **Notifications** — Check and respond to mentions, likes, follows
+- **Notifications** — Check and respond to mentions, likes, follows (with relationship badges)
 - **Profile Management** — Update avatar, bio, display name
 - **DMs** — Send and receive direct messages
 
@@ -188,6 +189,27 @@ bsky dm @user.bsky.social "Hello!"
 bsky dm --list
 ```
 
+### Interlocutor Tracking
+
+```bash
+# View all known interlocutors
+bsky people
+
+# View regulars only (3+ interactions)
+bsky people --regulars
+
+# Look up specific user
+bsky people @user.bsky.social
+
+# Statistics
+bsky people --stats
+```
+
+The interlocutor system tracks who you've interacted with and enriches engagement:
+- Notifications show 🔄 for regulars, 🆕 for first contacts
+- LLM prompts include relationship context (avoid repetition, adapt tone)
+- History stored in `~/.bsky-cli/interlocutors.json`
+
 ### Cleanup
 
 ```bash
@@ -202,23 +224,25 @@ bsky delete --count 5 --dry-run
 
 ```
 bsky_cli/
-├── auth.py       # Credential loading (pass/env), session management
-├── cli.py        # Main CLI entry point
-├── post.py       # Posting, link cards, facets, quote posts
-├── reply.py      # Reply with proper thread refs
-├── like.py       # Like/unlike posts
-├── repost.py     # Repost/unrepost
-├── search.py     # Search posts with filters
-├── engage.py     # LLM-powered engagement
-├── discover.py   # Account discovery
-├── threads.py    # Thread tracking & monitoring
-├── organic.py    # Organic posting logic
-├── notify.py     # Notifications
-├── follow.py     # Follow/unfollow
-├── profile.py    # Profile updates
-├── dm.py         # Direct messages
-├── announce.py   # Blog post announcements
-└── delete.py     # Post deletion
+├── auth.py           # Credential loading (pass/env), session management
+├── cli.py            # Main CLI entry point
+├── post.py           # Posting, link cards, facets, quote posts
+├── reply.py          # Reply with proper thread refs
+├── like.py           # Like/unlike posts
+├── repost.py         # Repost/unrepost
+├── search.py         # Search posts with filters
+├── engage.py         # LLM-powered engagement (uses interlocutors)
+├── discover.py       # Account discovery
+├── threads.py        # Thread tracking & monitoring
+├── interlocutors.py  # Interaction history tracking
+├── people.py         # CLI for viewing interlocutor history
+├── organic.py        # Organic posting logic
+├── notify.py         # Notifications (with relationship badges)
+├── follow.py         # Follow/unfollow
+├── profile.py        # Profile updates
+├── dm.py             # Direct messages
+├── announce.py       # Blog post announcements
+└── delete.py         # Post deletion
 ```
 
 ## State Files
