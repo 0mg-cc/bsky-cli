@@ -113,6 +113,28 @@ EXAMPLES:
     follow_parser.add_argument("handle", help="Handle to follow (e.g. user.bsky.social)")
     follow_parser.add_argument("--dry-run", action="store_true", help="Preview without following")
 
+    # threads
+    threads_parser = subparsers.add_parser("threads", help="Track and evaluate conversation threads")
+    threads_sub = threads_parser.add_subparsers(dest="threads_command", required=True)
+    
+    # threads evaluate
+    threads_eval = threads_sub.add_parser("evaluate", help="Evaluate notifications for thread importance")
+    threads_eval.add_argument("--limit", type=int, default=50, help="Notifications to check (default: 50)")
+    threads_eval.add_argument("--json", action="store_true", help="Output cron configs as JSON")
+    threads_eval.add_argument("--silence-hours", type=int, default=18, help="Hours of silence before cron disables (default: 18)")
+    
+    # threads list
+    threads_sub.add_parser("list", help="List tracked threads")
+    
+    # threads watch
+    threads_watch = threads_sub.add_parser("watch", help="Start watching a specific thread")
+    threads_watch.add_argument("url", help="URL of the thread to watch")
+    threads_watch.add_argument("--silence-hours", type=int, default=18, help="Hours of silence before cron disables (default: 18)")
+    
+    # threads unwatch
+    threads_unwatch = threads_sub.add_parser("unwatch", help="Stop watching a thread")
+    threads_unwatch.add_argument("target", help="Thread URL, URI, or interlocutor handle")
+
     args = parser.parse_args(argv)
 
     # Import and run the appropriate command
@@ -138,6 +160,8 @@ EXAMPLES:
         from .discover import run
     elif args.command == "follow":
         from .follow import run
+    elif args.command == "threads":
+        from .threads import run
     else:
         parser.print_help()
         return 2
