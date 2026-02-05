@@ -22,6 +22,7 @@ import requests
 
 from .auth import get_session, load_from_pass
 from .like import like_post, resolve_post
+from .post import detect_facets
 from .post import create_post, create_quote_embed
 
 
@@ -260,12 +261,18 @@ def quote_post(pds: str, jwt: str, did: str, post_uri: str, post_cid: str,
         }
     }
     
+    # Detect facets for clickable hashtags/URLs
+    facets = detect_facets(comment)
+    
     record = {
         "$type": "app.bsky.feed.post",
         "text": comment,
         "embed": embed,
         "createdAt": now
     }
+    
+    if facets:
+        record["facets"] = facets
     
     r = requests.post(
         f"{pds}/xrpc/com.atproto.repo.createRecord",

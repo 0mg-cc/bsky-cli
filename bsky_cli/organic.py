@@ -24,7 +24,7 @@ from zoneinfo import ZoneInfo
 import requests
 
 from .auth import get_session, load_from_pass
-from .post import create_post, create_external_embed
+from .post import create_post, create_external_embed, detect_facets
 
 # ============================================================================
 # CONFIGURATION
@@ -197,7 +197,7 @@ Write an organic post about: {content_type}
 ## RULES
 - Max 280 characters (STRICT)
 - English only
-- NO hashtags (they feel robotic on BlueSky)
+- Include 1-2 relevant hashtags (e.g. #AI #Linux #FOSS #automation)
 - {"MUST include a source URL for embed" if source['requires_embed'] else "No embed required"}
 - Be genuine, not generic
 - Questions drive engagement
@@ -319,8 +319,11 @@ def run(args) -> int:
         else:
             print("⚠️  Could not fetch embed, posting without")
     
+    # Detect facets (makes hashtags and URLs clickable)
+    facets = detect_facets(text)
+    
     # Create post
-    result = create_post(pds, jwt, did, text, embed=embed)
+    result = create_post(pds, jwt, did, text, facets=facets, embed=embed)
     
     if result:
         print(f"\n✓ Posted successfully!")
