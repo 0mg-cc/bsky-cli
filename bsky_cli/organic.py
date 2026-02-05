@@ -34,7 +34,7 @@ TIMEZONE = ZoneInfo("America/Toronto")
 
 # Posting windows (hour ranges in Toronto time)
 POSTING_WINDOWS = [
-    (8, 0, 22, 30),  # 8:00 AM to 10:30 PM
+    (7, 0, 23, 30),  # 7:00 AM to 11:30 PM
 ]
 
 # Default probability of posting when called
