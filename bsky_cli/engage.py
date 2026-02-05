@@ -15,6 +15,7 @@ import requests
 
 from .auth import get_session, load_from_pass
 from .like import like_post
+from .post import detect_facets
 
 # ============================================================================
 # CONFIGURATION
@@ -648,6 +649,11 @@ def post_reply(
             "parent": {"uri": parent_uri, "cid": parent_cid}
         }
     }
+    
+    # Add facets for clickable URLs and hashtags
+    facets = detect_facets(text)
+    if facets:
+        record["facets"] = facets
     
     r = requests.post(
         f"{pds}/xrpc/com.atproto.repo.createRecord",
