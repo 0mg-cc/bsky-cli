@@ -197,7 +197,7 @@ Write an organic post about: {content_type}
 ## RULES
 - Max 280 characters (STRICT)
 - English only
-- Include relevant hashtag (#OpenClaw, #AI, #Linux, etc.)
+- NO hashtags (they feel robotic on BlueSky)
 - {"MUST include a source URL for embed" if source['requires_embed'] else "No embed required"}
 - Be genuine, not generic
 - Questions drive engagement
