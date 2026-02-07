@@ -392,7 +392,28 @@ TYPICAL CRON SETUP:
     )
     organic_parser.add_argument("--dry-run", action="store_true", help="Preview without posting")
     organic_parser.add_argument("--force", action="store_true", help="Ignore time window and probability")
-    organic_parser.add_argument("--probability", type=float, default=0.20, help="Posting probability (default: 0.20)")
+    organic_parser.add_argument("--probability", type=float, default=None, help="Posting probability (default: from config)")
+
+    # config
+    config_parser = subparsers.add_parser(
+        "config", help="Manage configuration",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+EXAMPLES:
+  bsky config                     # Show current config
+  bsky config --init              # Create config file with defaults
+  bsky config --path              # Show config file path
+
+CONFIG LOCATION:
+  ~/.config/bsky-cli/config.yaml
+
+All settings are optional - defaults work out of the box.
+Edit the config file to customize behavior.
+"""
+    )
+    config_parser.add_argument("--init", action="store_true", help="Create config file with example settings")
+    config_parser.add_argument("--path", action="store_true", help="Show config file path")
+    config_parser.add_argument("--force", action="store_true", help="Overwrite existing config (with --init)")
 
     args = parser.parse_args(argv)
 
@@ -433,6 +454,28 @@ TYPICAL CRON SETUP:
         from .people import run
     elif args.command == "organic":
         from .organic import run
+    elif args.command == "config":
+        from .config import find_config_file, init_config, show_config
+        if args.path:
+            config_file = find_config_file()
+            if config_file:
+                print(config_file)
+            else:
+                print("(no config file - using defaults)")
+            return 0
+        elif args.init:
+            try:
+                path = init_config(force=args.force)
+                print(f"✓ Created config file: {path}")
+                print(f"  Edit it to customize settings.")
+                return 0
+            except FileExistsError as e:
+                print(f"✗ {e}")
+                print("  Use --force to overwrite.")
+                return 1
+        else:
+            show_config()
+            return 0
     else:
         parser.print_help()
         return 2

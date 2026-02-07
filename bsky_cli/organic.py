@@ -24,37 +24,35 @@ from zoneinfo import ZoneInfo
 import requests
 
 from .auth import get_session, load_from_pass
+from .config import get, get_section
 from .post import create_post, create_external_embed, detect_facets
 
 # ============================================================================
-# CONFIGURATION
+# CONFIGURATION (loaded from ~/.config/bsky-cli/config.yaml)
 # ============================================================================
 
-TIMEZONE = ZoneInfo("America/Toronto")
+def get_timezone() -> ZoneInfo:
+    return ZoneInfo(get("timezone", "America/Toronto"))
 
-# Posting windows (hour ranges in Toronto time)
-POSTING_WINDOWS = [
-    (7, 0, 23, 30),  # 7:00 AM to 11:30 PM
-]
+def get_posting_windows() -> list[tuple]:
+    windows = get("organic.posting_windows", [[7, 0, 23, 30]])
+    return [tuple(w) for w in windows]
 
-# Default probability of posting when called
-DEFAULT_PROBABILITY = 0.20
+def get_probability() -> float:
+    return get("organic.probability", 0.20)
 
-# Content types with weights (more weight = more likely)
-CONTENT_TYPES = {
-    "actualité": 2,      # News commentary
-    "économie": 1,       # Finance/markets
-    "activités": 2,      # What I'm working on
-    "passions": 4,       # Interests/topics (most common)
-}
+def get_content_types() -> dict:
+    return get("organic.content_types", {
+        "actualité": 2, "économie": 1, "activités": 2, "passions": 4
+    })
 
-# Passion topics for double shuffle
-PASSION_TOPICS = [
-    "éthique", "cyberpunk", "typo/design", "astronomie", "climat",
-    "biosystèmes", "photo", "psycho", "game-theory", "linguistique"
-]
+def get_passion_topics() -> list[str]:
+    return get("organic.passion_topics", [
+        "éthique", "cyberpunk", "typo/design", "astronomie", "climat",
+        "biosystèmes", "photo", "psycho", "game-theory", "linguistique"
+    ])
 
-# Guidelines file
+# Guidelines file (not configurable for now)
 GUIDELINES_FILE = Path.home() / "personas/echo/data/bsky-guidelines.md"
 
 # Source directories
@@ -68,16 +66,17 @@ REVUE_FINANCE_DIR = Path.home() / "state/revue_finance"
 
 def is_in_posting_window(now: datetime | None = None) -> bool:
     """Check if current time is within posting windows."""
+    tz = get_timezone()
     if now is None:
-        now = datetime.now(TIMEZONE)
+        now = datetime.now(tz)
     elif now.tzinfo is None:
-        now = now.replace(tzinfo=TIMEZONE)
+        now = now.replace(tzinfo=tz)
     else:
-        now = now.astimezone(TIMEZONE)
+        now = now.astimezone(tz)
     
     current_minutes = now.hour * 60 + now.minute
     
-    for start_h, start_m, end_h, end_m in POSTING_WINDOWS:
+    for start_h, start_m, end_h, end_m in get_posting_windows():
         start_minutes = start_h * 60 + start_m
         end_minutes = end_h * 60 + end_m
         if start_minutes <= current_minutes <= end_minutes:
@@ -86,8 +85,10 @@ def is_in_posting_window(now: datetime | None = None) -> bool:
     return False
 
 
-def should_post(probability: float = DEFAULT_PROBABILITY) -> bool:
+def should_post(probability: float | None = None) -> bool:
     """Probabilistic decision to post."""
+    if probability is None:
+        probability = get_probability()
     return random.random() < probability
 
 
@@ -97,8 +98,9 @@ def should_post(probability: float = DEFAULT_PROBABILITY) -> bool:
 
 def select_content_type() -> str:
     """Weighted random selection of content type."""
-    types = list(CONTENT_TYPES.keys())
-    weights = list(CONTENT_TYPES.values())
+    content_types = get_content_types()
+    types = list(content_types.keys())
+    weights = list(content_types.values())
     return random.choices(types, weights=weights, k=1)[0]
 
 
@@ -133,7 +135,8 @@ def get_source_for_type(content_type: str) -> dict:
             "requires_embed": False,
         }
     elif content_type == "passions":
-        topic = random.choice(PASSION_TOPICS)
+        passion_topics = get_passion_topics()
+        topic = random.choice(passion_topics)
         return {
             "source_type": "passion",
             "source_path": None,
@@ -246,12 +249,13 @@ Return ONLY valid JSON, no markdown."""
 
 def run(args) -> int:
     """Execute organic post command."""
-    probability = getattr(args, 'probability', DEFAULT_PROBABILITY)
+    probability = getattr(args, 'probability', None) or get_probability()
     dry_run = getattr(args, 'dry_run', False)
     force = getattr(args, 'force', False)
     
-    now = datetime.now(TIMEZONE)
-    print(f"🕐 Current time: {now.strftime('%Y-%m-%d %H:%M')} ({TIMEZONE})")
+    tz = get_timezone()
+    now = datetime.now(tz)
+    print(f"🕐 Current time: {now.strftime('%Y-%m-%d %H:%M')} ({tz})")
     
     # Check posting window (unless forced)
     if not force and not is_in_posting_window(now):
@@ -365,8 +369,8 @@ BEHAVIOR:
     )
     parser.add_argument("--dry-run", action="store_true", help="Preview without posting")
     parser.add_argument("--force", action="store_true", help="Ignore time window and probability")
-    parser.add_argument("--probability", type=float, default=DEFAULT_PROBABILITY,
-                        help=f"Posting probability (default: {DEFAULT_PROBABILITY})")
+    parser.add_argument("--probability", type=float, default=None,
+                        help="Posting probability (default: from config, 0.20)")
     
     args = parser.parse_args()
     return run(args)

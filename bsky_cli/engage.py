@@ -14,22 +14,27 @@ from typing import Callable
 import requests
 
 from .auth import get_session, load_from_pass
+from .config import get, get_section
 from .like import like_post
 from .post import detect_facets
 
 # ============================================================================
-# CONFIGURATION
+# CONFIGURATION (loaded from ~/.config/bsky-cli/config.yaml)
 # ============================================================================
 
-TOPICS = [
-    "tech", "ops", "infrastructure", "devops",
-    "AI", "machine learning", "LLM", "agents",
-    "linux", "FOSS", "open source",
-    "climate", "environment", "sustainability",
-    "wealth inequality", "economics", "social justice",
-    "consciousness", "philosophy", "psychology",
-    "automation", "scripting", "tools"
-]
+def get_topics() -> list[str]:
+    return get("topics", [
+        "tech", "ops", "infrastructure", "devops",
+        "AI", "machine learning", "LLM", "agents",
+        "linux", "FOSS", "open source",
+        "climate", "environment", "sustainability",
+        "wealth inequality", "economics", "social justice",
+        "consciousness", "philosophy", "psychology",
+        "automation", "scripting", "tools"
+    ])
+
+def get_engage_config() -> dict:
+    return get_section("engage")
 
 STATE_FILE = Path.home() / "personas/echo/data/bsky-engage-state.json"
 CONVERSATIONS_FILE = Path.home() / "personas/echo/data/bsky-conversations.json"
@@ -213,7 +218,7 @@ class ConversationBonus(ScoreMultiplier):
 
 
 class FriendlyInterlocutorBonus(ScoreMultiplier):
-    """Boost posts from interlocutors tagged as friendly."""
+    """Boost posts from interlocutors based on relationship level."""
     name = "friendly_bonus"
     
     def calculate(self, post: Post, state: dict) -> float:
@@ -223,14 +228,17 @@ class FriendlyInterlocutorBonus(ScoreMultiplier):
             return 1.0
         
         multiplier = 1.0
+        cfg = get_engage_config()
         
-        # Friendly tag = strong bonus
-        if "friendly" in inter.tags:
-            multiplier *= 1.5
-        
-        # Regular interlocutor = moderate bonus
+        # Regular interlocutor = strongest bonus (default 2.0x)
         if inter.is_regular:
-            multiplier *= 1.3
+            multiplier *= get("interlocutors.regular_boost", 2.0)
+        # Friendly interlocutor = moderate bonus (default 1.5x)
+        elif inter.is_friendly:
+            multiplier *= get("interlocutors.friendly_boost", 1.5)
+        # Friendly tag = also bonus
+        elif "friendly" in inter.tags:
+            multiplier *= get("interlocutors.friendly_boost", 1.5)
         
         return multiplier
 
@@ -533,7 +541,7 @@ def select_posts_with_llm(candidates: list[Post], state: dict, dry_run: bool = F
         
         posts_data.append(post_entry)
     
-    topics_str = ", ".join(TOPICS)
+    topics_str = ", ".join(get_topics())
     posts_json = json.dumps(posts_data, indent=2)
     
     # Build guidelines section if available
@@ -679,12 +687,13 @@ def post_reply(
 
 def create_default_pipeline(our_did: str) -> FilterPipeline:
     """Create the default filter pipeline."""
+    cfg = get_engage_config()
     return (FilterPipeline()
         # Filters (order matters - fastest/most selective first)
         .add_filter(AlreadyRepliedFilter())
-        .add_filter(AccountLimitFilter(max_per_session=1))
-        .add_filter(MinTextLengthFilter(min_chars=20))
-        .add_filter(EngagementFilter(max_replies=50))  # Avoid crowded threads
+        .add_filter(AccountLimitFilter(max_per_session=cfg.get("max_per_account", 1)))
+        .add_filter(MinTextLengthFilter(min_chars=cfg.get("min_text_length", 20)))
+        .add_filter(EngagementFilter(max_replies=cfg.get("max_thread_replies", 50)))
         # Multipliers
         .add_multiplier(LowEngagementBonus())
         .add_multiplier(ConversationBonus(our_did))
@@ -790,8 +799,9 @@ def run(args) -> int:
                     their_text=their_text,
                 )
                 
-                # Maybe like the post we replied to (40% chance)
-                if random.random() < 0.4:
+                # Maybe like the post we replied to
+                like_prob = get_engage_config().get("like_after_reply_prob", 0.4)
+                if random.random() < like_prob:
                     like_result = like_post(pds, jwt, did, sel["uri"], sel["cid"])
                     if like_result:
                         print(f"  ❤️ Also liked!")

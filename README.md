@@ -54,6 +54,58 @@ export OPENROUTER_API_KEY=sk-or-...  # for LLM features
 
 Get an app password from: Settings → Privacy and Security → App Passwords
 
+### Behavior Configuration
+
+bsky-cli supports an optional YAML configuration file for customizing behavior.
+
+```bash
+# Create a config file with example settings
+bsky config --init
+
+# Show current configuration
+bsky config
+
+# Show config file path
+bsky config --path
+```
+
+Config file location: `~/.config/bsky-cli/config.yaml`
+
+All settings are **optional** — sensible defaults work out of the box. 
+
+Example config:
+
+```yaml
+# Your timezone (IANA format)
+timezone: America/Toronto
+
+# Topics you're interested in (used for engagement scoring)
+topics:
+  - AI
+  - linux
+  - climate
+  - philosophy
+
+# Organic posting settings
+organic:
+  probability: 0.20              # Chance of posting when called
+  posting_windows:               # When to post [start_h, start_m, end_h, end_m]
+    - [7, 0, 23, 30]             # 7 AM to 11:30 PM
+
+# Engagement settings
+engage:
+  hours: 12                      # Look back window (hours)
+  max_per_account: 1             # Max replies per account per session
+  like_after_reply_prob: 0.4     # Chance to like after replying
+
+# Interlocutor tracking
+interlocutors:
+  friendly_threshold: 3          # Interactions to be "friendly"
+  regular_threshold: 10          # Interactions to be "regular"
+```
+
+Run `bsky config` to see all available settings with their current values.
+
 ## Usage
 
 ```bash

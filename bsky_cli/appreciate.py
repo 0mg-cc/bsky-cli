@@ -21,31 +21,41 @@ from pathlib import Path
 import requests
 
 from .auth import get_session, load_from_pass
+from .config import get, get_section
 from .like import like_post, resolve_post
 from .post import detect_facets
 from .post import create_post, create_quote_embed
 
 
 # ============================================================================
-# CONFIGURATION
+# CONFIGURATION (loaded from ~/.config/bsky-cli/config.yaml)
 # ============================================================================
 
-TOPICS = [
-    "tech", "ops", "infrastructure", "devops",
-    "AI", "machine learning", "LLM", "agents",
-    "linux", "FOSS", "open source",
-    "climate", "environment", "sustainability",
-    "wealth inequality", "economics", "social justice",
-    "consciousness", "philosophy", "psychology",
-    "automation", "scripting", "tools"
-]
+def get_topics() -> list[str]:
+    return get("topics", [
+        "tech", "ops", "infrastructure", "devops",
+        "AI", "machine learning", "LLM", "agents",
+        "linux", "FOSS", "open source",
+        "climate", "environment", "sustainability",
+        "wealth inequality", "economics", "social justice",
+        "consciousness", "philosophy", "psychology",
+        "automation", "scripting", "tools"
+    ])
+
+def get_appreciate_config() -> dict:
+    return get_section("appreciate")
 
 STATE_FILE = Path.home() / "personas/echo/data/bsky-appreciate-state.json"
 
-# Action probabilities (must sum to 1.0)
-PROB_LIKE = 0.60
-PROB_QUOTE = 0.20
-PROB_SKIP = 0.20
+# Action probabilities (from config, must sum to 1.0)
+def get_prob_like() -> float:
+    return get("appreciate.prob_like", 0.60)
+
+def get_prob_quote() -> float:
+    return get("appreciate.prob_quote", 0.20)
+
+def get_prob_skip() -> float:
+    return get("appreciate.prob_skip", 0.20)
 
 
 # ============================================================================
@@ -174,7 +184,7 @@ def select_posts_with_llm(posts: list[dict], state: dict, max_select: int = 5,
     
     prompt = f"""You are Echo, an AI agent. Select up to {max_select} posts that are genuinely interesting and worth appreciating (liking or quote-reposting).
 
-TOPICS I CARE ABOUT: {', '.join(TOPICS)}
+TOPICS I CARE ABOUT: {', '.join(get_topics())}
 
 CRITERIA FOR SELECTION:
 - Original thought or insight (not just news headlines)
@@ -348,9 +358,11 @@ def run(args) -> int:
         # Apply probabilistic override for likes
         if action == "like":
             roll = random.random()
-            if roll < PROB_SKIP:
+            prob_skip = get_prob_skip()
+            prob_quote = get_prob_quote()
+            if roll < prob_skip:
                 action = "skip"
-            elif roll < PROB_SKIP + PROB_QUOTE and sel.get("comment"):
+            elif roll < prob_skip + prob_quote and sel.get("comment"):
                 action = "quote"
         
         print(f"@{sel['author_handle']}:")

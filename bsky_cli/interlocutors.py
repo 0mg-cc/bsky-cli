@@ -13,14 +13,32 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
 
+from .config import get, get_section
+
 # ============================================================================
-# CONFIGURATION
+# CONFIGURATION (loaded from ~/.config/bsky-cli/config.yaml)
 # ============================================================================
 
 INTERLOCUTORS_FILE = Path.home() / ".bsky-cli" / "interlocutors.json"
 
-# Threshold for "regular" status
-REGULAR_THRESHOLD = 3
+def get_friendly_threshold() -> int:
+    """Interactions to be considered 'friendly'."""
+    return get("interlocutors.friendly_threshold", 3)
+
+def get_regular_threshold() -> int:
+    """Interactions to be considered 'regular'."""
+    return get("interlocutors.regular_threshold", 10)
+
+def get_friendly_boost() -> float:
+    """Score multiplier for friendly accounts."""
+    return get("interlocutors.friendly_boost", 1.5)
+
+def get_regular_boost() -> float:
+    """Score multiplier for regular accounts."""
+    return get("interlocutors.regular_boost", 2.0)
+
+# For backwards compatibility
+REGULAR_THRESHOLD = 3  # Use get_friendly_threshold() instead
 
 # Maximum interactions to store per user (keep recent ones)
 MAX_INTERACTIONS_PER_USER = 50
@@ -80,9 +98,14 @@ class Interlocutor:
     tags: list[str] = field(default_factory=list)  # e.g., ["friendly", "technical", "ai-researcher"]
     
     @property
+    def is_friendly(self) -> bool:
+        """Is this a friendly interlocutor (3+ interactions by default)?"""
+        return self.total_count >= get_friendly_threshold()
+    
+    @property
     def is_regular(self) -> bool:
-        """Is this a regular interlocutor?"""
-        return self.total_count >= REGULAR_THRESHOLD
+        """Is this a regular interlocutor (10+ interactions by default)?"""
+        return self.total_count >= get_regular_threshold()
     
     @property
     def relationship_summary(self) -> str:
@@ -93,6 +116,8 @@ class Interlocutor:
             return f"1 interaction ({self.last_interaction})"
         elif self.is_regular:
             return f"regular ({self.total_count} interactions, since {self.first_seen})"
+        elif self.is_friendly:
+            return f"friendly ({self.total_count} interactions, since {self.first_seen})"
         else:
             return f"{self.total_count} interactions (since {self.first_seen})"
     

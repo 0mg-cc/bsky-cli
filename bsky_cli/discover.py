@@ -11,31 +11,38 @@ from pathlib import Path
 import requests
 
 from .auth import get_session, load_from_pass
+from .config import get, get_section
 
 # ============================================================================
-# CONFIGURATION
+# CONFIGURATION (loaded from ~/.config/bsky-cli/config.yaml)
 # ============================================================================
 
 STATE_FILE = Path.home() / "personas/echo/data/bsky-discover-state.json"
 
-DEFAULT_CONFIG = {
-    "follows_sample_pct": 0.10,      # 10% of each follow's follows
-    "repost_top_pct": 0.20,          # Top 20% most reposted authors
-    "scan_cooldown_days": 90,        # 3 months before re-scanning a follow
-    "min_posts": 5,                  # Minimum posts to consider
-    "min_followers": 10,             # Minimum followers
-    "max_following_ratio": 10,       # Max following/followers ratio (anti-bot)
-}
+def get_discover_defaults() -> dict:
+    """Get default discover config, overridable via config file."""
+    cfg = get_section("discover")
+    return {
+        "follows_sample_pct": cfg.get("follows_sample_pct", 0.10),
+        "repost_top_pct": cfg.get("repost_top_pct", 0.20),
+        "scan_cooldown_days": cfg.get("scan_cooldown_days", 90),
+        "min_posts": cfg.get("min_posts", 5),
+        "min_followers": cfg.get("min_followers", 10),
+        "max_following_ratio": cfg.get("max_following_ratio", 10),
+    }
 
-# Topics for relevance scoring
-TOPICS = [
-    "tech", "ops", "infrastructure", "devops", "sysadmin",
-    "AI", "machine learning", "LLM", "agents", "automation",
-    "linux", "FOSS", "open source", "programming",
-    "climate", "environment", "sustainability",
-    "economics", "social justice", "politics",
-    "philosophy", "psychology", "consciousness",
-]
+# For backwards compatibility
+DEFAULT_CONFIG = get_discover_defaults()
+
+def get_topics() -> list[str]:
+    return get("topics", [
+        "tech", "ops", "infrastructure", "devops", "sysadmin",
+        "AI", "machine learning", "LLM", "agents", "automation",
+        "linux", "FOSS", "open source", "programming",
+        "climate", "environment", "sustainability",
+        "economics", "social justice", "politics",
+        "philosophy", "psychology", "consciousness",
+    ])
 
 
 # ============================================================================
@@ -217,7 +224,7 @@ def score_candidate(profile: dict, config: dict) -> tuple[float, list[str]]:
     
     # Topic relevance
     text = f"{bio} {display_name}".lower()
-    matches = [t for t in TOPICS if t.lower() in text]
+    matches = [t for t in get_topics() if t.lower() in text]
     if matches:
         score += len(matches) * 0.5
         reasons.append(f"topics: {', '.join(matches[:3])}")

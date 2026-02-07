@@ -62,16 +62,28 @@ class TestInteraction:
 class TestInterlocutor:
     """Tests for Interlocutor dataclass."""
 
-    def test_is_regular(self):
-        """Should correctly identify regulars."""
+    def test_is_friendly(self):
+        """Should correctly identify friendly interlocutors (3+ interactions)."""
         inter = Interlocutor(
             did="did:plc:test",
             handle="test.bsky.social",
-            total_count=REGULAR_THRESHOLD
+            total_count=3  # friendly_threshold default
+        )
+        assert inter.is_friendly is True
+        
+        inter.total_count = 2
+        assert inter.is_friendly is False
+    
+    def test_is_regular(self):
+        """Should correctly identify regulars (10+ interactions)."""
+        inter = Interlocutor(
+            did="did:plc:test",
+            handle="test.bsky.social",
+            total_count=10  # regular_threshold default
         )
         assert inter.is_regular is True
         
-        inter.total_count = REGULAR_THRESHOLD - 1
+        inter.total_count = 9
         assert inter.is_regular is False
 
     def test_relationship_summary(self):
@@ -83,8 +95,13 @@ class TestInterlocutor:
         inter.last_interaction = "2026-02-04"
         assert "1 interaction" in inter.relationship_summary
         
+        # 5 interactions = "friendly" (3+ threshold)
         inter.total_count = 5
         inter.first_seen = "2026-01-01"
+        assert "friendly" in inter.relationship_summary
+        
+        # 10 interactions = "regular" (10+ threshold)
+        inter.total_count = 10
         assert "regular" in inter.relationship_summary
 
     def test_add_interaction(self):
@@ -171,10 +188,11 @@ class TestGetters:
         assert inter is not None
 
     def test_is_regular_function(self, temp_storage):
-        """Should check regular status."""
+        """Should check regular status (10+ interactions by default)."""
         assert is_regular("did:plc:nonexistent") is False
         
-        for i in range(REGULAR_THRESHOLD):
+        # Need 10 interactions for "regular" status
+        for i in range(10):
             record_interaction(did="did:plc:test", handle="test", interaction_type="reply_to_them")
         
         assert is_regular("did:plc:test") is True
@@ -189,8 +207,8 @@ class TestFormatters:
         assert badge == "🆕"
 
     def test_format_notification_badge_regular(self, temp_storage):
-        """Should return 🔄 for regulars."""
-        for i in range(REGULAR_THRESHOLD):
+        """Should return 🔄 for regulars (10+ interactions)."""
+        for i in range(10):
             record_interaction(did="did:plc:test", handle="test", interaction_type="reply_to_them")
         
         badge = format_notification_badge("did:plc:test")
