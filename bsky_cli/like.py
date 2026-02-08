@@ -1,7 +1,7 @@
 """Like and unlike posts on BlueSky."""
 import argparse
 import re
-import requests
+from .http import requests
 from datetime import datetime, timezone
 
 from .auth import get_session

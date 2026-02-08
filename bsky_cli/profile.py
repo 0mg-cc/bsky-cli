@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import requests
+from .http import requests
 
 from .auth import get_session, upload_blob
 

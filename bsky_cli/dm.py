@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 
-import requests
+from .http import requests
 
 from .auth import get_session
 

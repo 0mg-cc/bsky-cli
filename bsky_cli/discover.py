@@ -8,7 +8,7 @@ import random
 from collections import Counter
 from pathlib import Path
 
-import requests
+from .http import requests
 
 from .auth import get_session, load_from_pass
 from .config import get, get_section

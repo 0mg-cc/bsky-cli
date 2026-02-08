@@ -6,7 +6,7 @@ import argparse
 import re
 from typing import Any
 
-import requests
+from .http import requests
 
 from .auth import get_session
 

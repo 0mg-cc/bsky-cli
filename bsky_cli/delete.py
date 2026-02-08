@@ -1,7 +1,7 @@
 """Delete command for BlueSky CLI."""
 from __future__ import annotations
 
-import requests
+from .http import requests
 
 from .auth import get_session
 

@@ -15,7 +15,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-import requests
+from .http import requests
 
 from .auth import get_session, load_from_pass
 

@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
-import requests
+from .http import requests
 
 from .auth import get_session, load_from_pass
 from .config import get, get_section

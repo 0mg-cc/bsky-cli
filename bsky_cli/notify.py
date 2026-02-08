@@ -6,7 +6,7 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
-import requests
+from .http import requests
 
 from .auth import get_session
 from .dm import check_new_dms, format_dm

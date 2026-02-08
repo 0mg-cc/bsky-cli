@@ -1,6 +1,6 @@
 """Repost (retweet) posts on BlueSky."""
 import argparse
-import requests
+from .http import requests
 from datetime import datetime, timezone
 
 from .auth import get_session

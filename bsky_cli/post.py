@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 from html.parser import HTMLParser
 
-import requests
+from .http import requests
 
 from .auth import get_session, utc_now_iso, upload_blob
 

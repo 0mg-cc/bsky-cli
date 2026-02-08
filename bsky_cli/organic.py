@@ -21,7 +21,7 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-import requests
+from .http import requests
 
 from .auth import get_session, load_from_pass
 from .config import get, get_section

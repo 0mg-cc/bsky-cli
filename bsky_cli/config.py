@@ -81,6 +81,11 @@ DEFAULT_CONFIG = {
         "friendly_boost": 1.5,         # Score multiplier for friendly accounts
         "regular_boost": 2.0,          # Score multiplier for regular accounts
     },
+
+    # API behavior
+    "api": {
+        "calls_per_minute": 60,        # Client-side request cap for BlueSky API
+    },
 }
 
 # Config file locations (first found wins)
@@ -229,6 +234,10 @@ discover:
 interlocutors:
   friendly_threshold: 3          # Interactions to be "friendly"
   regular_threshold: 10          # Interactions to be "regular"
+
+# API settings
+api:
+  calls_per_minute: 60           # Client-side API cap (logs when throttled)
 """
     
     config_path.write_text(example)

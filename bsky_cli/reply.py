@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import re
 
-import requests
+from .http import requests
 
 from .auth import get_session, utc_now_iso, resolve_handle
 from .post import detect_facets

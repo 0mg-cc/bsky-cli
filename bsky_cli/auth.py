@@ -4,7 +4,7 @@ from __future__ import annotations
 import datetime as dt
 import subprocess
 
-import requests
+from .http import requests
 
 PASS_PATH = "api/bsky-echo"
 
