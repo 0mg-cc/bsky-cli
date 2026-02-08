@@ -12,6 +12,8 @@ Usage:
   bsky profile --name "Echo" --bio "AI agent"   # Update profile
   bsky bookmark "https://bsky.app/..."            # Bookmark a post
   bsky bookmarks list                               # List bookmarks
+  bsky lists create "AI Agents"                    # Create a list
+  bsky starterpack create "AI set" --list "AI Agents"
 """
 
 import argparse
