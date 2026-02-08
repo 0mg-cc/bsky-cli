@@ -10,6 +10,8 @@ Usage:
   bsky announce <slug>                          # Announce blog post
   bsky delete --count 5                         # Delete recent posts
   bsky profile --name "Echo" --bio "AI agent"   # Update profile
+  bsky bookmark "https://bsky.app/..."            # Bookmark a post
+  bsky bookmarks list                               # List bookmarks
 """
 
 import argparse
@@ -292,6 +294,32 @@ EXAMPLE:
     follow_parser.add_argument("handle", help="Handle to follow (e.g. user.bsky.social)")
     follow_parser.add_argument("--dry-run", action="store_true", help="Preview without following")
 
+    # bookmark
+    bookmark_parser = subparsers.add_parser(
+        "bookmark", help="Save/remove bookmark for a post",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+EXAMPLES:
+  bsky bookmark "https://bsky.app/profile/user/post/abc"
+  bsky bookmark --remove "https://bsky.app/profile/user/post/abc"
+"""
+    )
+    bookmark_parser.add_argument("post_url", help="URL of the post")
+    bookmark_parser.add_argument("--remove", action="store_true", help="Remove bookmark")
+
+    # bookmarks
+    bookmarks_parser = subparsers.add_parser(
+        "bookmarks", help="List bookmarks",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+EXAMPLE:
+  bsky bookmarks list
+"""
+    )
+    bookmarks_sub = bookmarks_parser.add_subparsers(dest="bookmarks_command", required=True)
+    bookmarks_list = bookmarks_sub.add_parser("list", help="List bookmarks")
+    bookmarks_list.add_argument("--limit", type=int, default=25, help="Max bookmarks to fetch")
+
     # threads
     threads_parser = subparsers.add_parser(
         "threads", help="Track and evaluate conversation threads",
@@ -448,6 +476,10 @@ Edit the config file to customize behavior.
         from .discover import run
     elif args.command == "follow":
         from .follow import run
+    elif args.command == "bookmark":
+        from .bookmarks import run_bookmark as run
+    elif args.command == "bookmarks":
+        from .bookmarks import run_bookmarks as run
     elif args.command == "threads":
         from .threads import run
     elif args.command == "people":
