@@ -320,6 +320,34 @@ EXAMPLE:
     bookmarks_list = bookmarks_sub.add_parser("list", help="List bookmarks")
     bookmarks_list.add_argument("--limit", type=int, default=25, help="Max bookmarks to fetch")
 
+    # lists
+    lists_parser = subparsers.add_parser(
+        "lists", help="Manage BlueSky lists",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    lists_sub = lists_parser.add_subparsers(dest="lists_command", required=True)
+    lists_sub.add_parser("list", help="List your lists")
+    lists_create = lists_sub.add_parser("create", help="Create a list")
+    lists_create.add_argument("name", help="List name")
+    lists_create.add_argument("--description", help="List description")
+    lists_add = lists_sub.add_parser("add", help="Add account to a list")
+    lists_add.add_argument("list_name", help="List name")
+    lists_add.add_argument("handle", help="Account handle (with or without @)")
+    lists_show = lists_sub.add_parser("show", help="Show list members")
+    lists_show.add_argument("list_name", help="List name")
+
+    # starterpack
+    sp_parser = subparsers.add_parser(
+        "starterpack", help="Manage BlueSky starter packs",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    sp_sub = sp_parser.add_subparsers(dest="starterpack_command", required=True)
+    sp_sub.add_parser("list", help="List starter packs")
+    sp_create = sp_sub.add_parser("create", help="Create a starter pack from a list")
+    sp_create.add_argument("name", help="Starter pack name")
+    sp_create.add_argument("--list", dest="list_name", required=True, help="Existing list name")
+    sp_create.add_argument("--description", help="Starter pack description")
+
     # threads
     threads_parser = subparsers.add_parser(
         "threads", help="Track and evaluate conversation threads",
@@ -480,6 +508,10 @@ Edit the config file to customize behavior.
         from .bookmarks import run_bookmark as run
     elif args.command == "bookmarks":
         from .bookmarks import run_bookmarks as run
+    elif args.command == "lists":
+        from .lists import run
+    elif args.command == "starterpack":
+        from .starterpack import run
     elif args.command == "threads":
         from .threads import run
     elif args.command == "people":
