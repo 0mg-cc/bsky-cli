@@ -138,18 +138,44 @@ EXAMPLES:
     repost_parser.add_argument("--undo", action="store_true", help="Remove repost")
     repost_parser.add_argument("--dry-run", action="store_true", help="Print without acting")
 
-    # dm
+    # dm (send)
     dm_parser = subparsers.add_parser(
         "dm", help="Send a direct message",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 EXAMPLE:
   bsky dm user.bsky.social "Hey, loved your post!"
+
+TIP:
+  Use `bsky dms` to view inbox/conversations.
 """
     )
     dm_parser.add_argument("handle", help="Handle of the recipient (e.g. user.bsky.social)")
     dm_parser.add_argument("text", help="Message text")
     dm_parser.add_argument("--dry-run", action="store_true", help="Print without sending")
+
+    # dms (inbox)
+    dms_parser = subparsers.add_parser(
+        "dms", help="View DM inbox / conversations",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+EXAMPLES:
+  bsky dms --json
+  bsky dms --limit 30 --preview 1
+  bsky dms show jenrm.bsky.social --json --limit 100
+"""
+    )
+    dms_sub = dms_parser.add_subparsers(dest="dms_command", required=False)
+
+    # default: list convos
+    dms_parser.add_argument("--json", action="store_true", help="Output JSON")
+    dms_parser.add_argument("--limit", type=int, default=20, help="Number of conversations to fetch")
+    dms_parser.add_argument("--preview", type=int, default=1, help="Preview N latest messages per convo")
+
+    dms_show = dms_sub.add_parser("show", help="Show messages for a conversation")
+    dms_show.add_argument("handle", help="Other participant handle")
+    dms_show.add_argument("--json", action="store_true", help="Output JSON")
+    dms_show.add_argument("--limit", type=int, default=50, help="Messages to fetch")
 
     # announce
     announce_parser = subparsers.add_parser(
@@ -496,6 +522,11 @@ Edit the config file to customize behavior.
         from .dm_cmd import run
     elif args.command == "search":
         from .search import run
+    elif args.command == "dms":
+        from .dms_cmd import run as dms_list, run_show as dms_show
+        if getattr(args, "dms_command", None) == "show":
+            return dms_show(args)
+        return dms_list(args)
     elif args.command == "engage":
         from .engage import run
     elif args.command == "appreciate":
