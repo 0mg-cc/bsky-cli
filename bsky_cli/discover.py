@@ -83,10 +83,23 @@ def get_config(state: dict) -> dict:
 # API HELPERS
 # ============================================================================
 
-def get_follows(pds: str, jwt: str, actor: str, limit: int | None = None) -> list[dict]:
-    """Get accounts that an actor follows."""
+def get_follows(
+    pds: str,
+    jwt: str,
+    actor: str,
+    limit: int | None = None,
+    max_pages: int = 200,
+) -> list[dict]:
+    """Get accounts that an actor follows.
+
+    Includes pagination safety guards so a malformed or repeating cursor
+    cannot trap the caller in an infinite loop.
+    """
     follows = []
     cursor = None
+    seen_cursors = set()
+    pages = 0
+
     while True:
         params = {"actor": actor, "limit": 100}
         if cursor:
@@ -96,16 +109,26 @@ def get_follows(pds: str, jwt: str, actor: str, limit: int | None = None) -> lis
                 f"{pds}/xrpc/app.bsky.graph.getFollows",
                 headers={"Authorization": f"Bearer {jwt}"},
                 params=params,
-                timeout=30
+                timeout=30,
             )
             r.raise_for_status()
             data = r.json()
             follows.extend(data.get("follows", []))
-            cursor = data.get("cursor")
-            if not cursor:
-                break
+            pages += 1
+
             if limit and len(follows) >= limit:
                 break
+            if pages >= max_pages:
+                break
+
+            next_cursor = data.get("cursor")
+            if not next_cursor:
+                break
+            if next_cursor == cursor or next_cursor in seen_cursors:
+                break
+
+            seen_cursors.add(next_cursor)
+            cursor = next_cursor
         except Exception:
             break
     return follows[:limit] if limit else follows
