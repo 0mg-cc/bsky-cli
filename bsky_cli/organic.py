@@ -21,6 +21,8 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+import yaml
+
 from .http import requests
 
 from .auth import get_session, load_from_pass
@@ -104,15 +106,145 @@ def select_content_type() -> str:
     return random.choices(types, weights=weights, k=1)[0]
 
 
+def get_blog_base_url() -> str | None:
+    base = get("blog.base_url")
+    if not base:
+        return None
+    return str(base).rstrip("/")
+
+
+def get_blog_posts_dir() -> Path:
+    # Optional override; defaults to Echo's local Hugo repo layout.
+    p = get("blog.posts_dir")
+    if p:
+        return Path(p)
+    return Path.home() / "projects/echo-blog/content/posts"
+
+
+def _extract_frontmatter(md: str) -> tuple[dict, str]:
+    """Return (frontmatter_dict, body_text)."""
+    if not md.startswith("---"):
+        return {}, md
+
+    parts = md.split("---", 2)
+    if len(parts) < 3:
+        return {}, md
+
+    fm_raw = parts[1]
+    body = parts[2].lstrip("\n")
+    try:
+        fm = yaml.safe_load(fm_raw) or {}
+        if not isinstance(fm, dict):
+            fm = {}
+        return fm, body
+    except Exception:
+        return {}, body
+
+
+def _first_paragraph(text: str) -> str:
+    for chunk in text.split("\n\n"):
+        c = " ".join(line.strip() for line in chunk.splitlines()).strip()
+        if c:
+            return c
+    return ""
+
+
+def pick_latest_blog_post() -> dict | None:
+    """Best-effort: pick the most recent Hugo post from the local repo."""
+    posts_dir = get_blog_posts_dir()
+    if not posts_dir.exists():
+        return None
+
+    candidates = list(posts_dir.glob("*.md"))
+    if not candidates:
+        return None
+
+    metas: list[dict] = []
+    for p in candidates:
+        try:
+            raw = p.read_text(encoding="utf-8")
+        except Exception:
+            raw = p.read_text(errors="ignore")
+
+        fm, body = _extract_frontmatter(raw)
+        title = fm.get("title") or p.stem
+        date_str = fm.get("date")
+        dt = None
+        if isinstance(date_str, str):
+            try:
+                dt = datetime.fromisoformat(date_str)
+            except Exception:
+                dt = None
+
+        excerpt = _first_paragraph(body)
+        if len(excerpt) > 240:
+            excerpt = excerpt[:237].rstrip() + "..."
+
+        metas.append(
+            {
+                "path": p,
+                "slug": p.stem,
+                "title": str(title),
+                "date": dt,
+                "mtime": p.stat().st_mtime,
+                "excerpt": excerpt,
+            }
+        )
+
+    metas.sort(key=lambda m: (m["date"] is not None, m["date"] or m["mtime"]), reverse=True)
+    return metas[0]
+
+
 def get_source_for_type(content_type: str) -> dict:
     """Get source material based on content type.
-    
+
+    Supports both the original French schema (actualité/économie/activités/passions)
+    and the newer schema used by Echo's config (blog_teaser/ops_insight/agent_life/
+    tech_take/question).
+
     Returns dict with:
     - source_type: str
     - source_path: Path or None
-    - topic: str or None (for passions)
+    - topic: str | None
     - requires_embed: bool
+
+    Optional keys may be present (e.g. blog_post, embed_url).
     """
+
+    # --- New schema (Echo)
+    if content_type == "blog_teaser":
+        blog_post = pick_latest_blog_post()
+        base_url = get_blog_base_url()
+        embed_url = None
+        if blog_post and base_url:
+            embed_url = f"{base_url}/posts/{blog_post['slug']}/"
+
+        return {
+            "source_type": "blog",
+            "source_path": None,
+            "topic": None,
+            "requires_embed": bool(embed_url),
+            "blog_post": blog_post,
+            "embed_url": embed_url,
+        }
+
+    if content_type in {"ops_insight", "agent_life", "question"}:
+        return {
+            "source_type": "sessions",
+            "source_path": None,
+            "topic": None,
+            "requires_embed": False,
+        }
+
+    if content_type == "tech_take":
+        return {
+            "source_type": "revue_presse",
+            "source_path": REVUE_PRESSE_DIR,
+            "topic": None,
+            "requires_embed": True,
+        }
+
+    # --- Original schema (defaults)
     if content_type == "actualité":
         return {
             "source_type": "revue_presse",
@@ -120,21 +252,24 @@ def get_source_for_type(content_type: str) -> dict:
             "topic": None,
             "requires_embed": True,
         }
-    elif content_type == "économie":
+
+    if content_type == "économie":
         return {
             "source_type": "revue_finance",
             "source_path": REVUE_FINANCE_DIR,
             "topic": None,
             "requires_embed": True,
         }
-    elif content_type == "activités":
+
+    if content_type == "activités":
         return {
             "source_type": "sessions",
             "source_path": None,
             "topic": None,
             "requires_embed": False,
         }
-    elif content_type == "passions":
+
+    if content_type == "passions":
         passion_topics = get_passion_topics()
         topic = random.choice(passion_topics)
         return {
@@ -143,8 +278,14 @@ def get_source_for_type(content_type: str) -> dict:
             "topic": topic,
             "requires_embed": False,
         }
-    else:
-        raise ValueError(f"Unknown content type: {content_type}")
+
+    # Fallback: don't crash cron runs if config drifts.
+    return {
+        "source_type": "sessions",
+        "source_path": None,
+        "topic": None,
+        "requires_embed": False,
+    }
 
 
 def load_guidelines() -> str:
@@ -182,6 +323,17 @@ def generate_post_with_llm(content_type: str, source: dict, guidelines: str) -> 
             context = revue_files[0].read_text()[:3000]
     elif source["source_type"] == "passion":
         context = f"Topic to explore: {source['topic']}"
+    elif source["source_type"] == "blog":
+        post = source.get("blog_post")
+        if post and source.get("embed_url"):
+            context = (
+                "Promote this blog post:\n"
+                f"Title: {post.get('title', '')}\n"
+                f"Excerpt: {post.get('excerpt', '')}\n"
+                f"URL: {source.get('embed_url')}"
+            )
+        else:
+            context = "Promote a recent blog post (keep it concrete; no private info)."
     elif source["source_type"] == "sessions":
         context = "Share something about current work/projects (NO SECRETS, no private info)"
     
@@ -302,6 +454,9 @@ def run(args) -> int:
 
         text = post_data.get("text", "")
         embed_url = post_data.get("embed_url")
+        if content_type == "blog_teaser" and source.get("embed_url"):
+            # Keep teaser embeds deterministic (avoid LLM picking a random URL).
+            embed_url = source["embed_url"]
         reason = post_data.get("reason", "")
 
         # Validate
