@@ -66,7 +66,9 @@ class Branch:
     message_count: int
     topic_drift: float          # 0 = on topic, 1 = completely off topic
     branch_score: float         # Overall branch quality score
-    
+    messages: list[dict] = field(default_factory=list)
+    # Each message: {uri, createdAt, authorHandle, replyToHandle, textSnippet}
+
     def to_dict(self) -> dict:
         return {
             "our_reply_uri": self.our_reply_uri,
@@ -76,11 +78,16 @@ class Branch:
             "last_activity_at": self.last_activity_at,
             "message_count": self.message_count,
             "topic_drift": self.topic_drift,
-            "branch_score": self.branch_score
+            "branch_score": self.branch_score,
+            "messages": self.messages,
         }
-    
+
     @classmethod
     def from_dict(cls, d: dict) -> "Branch":
+        # Backward compatible: older state files won't have messages.
+        if "messages" not in d:
+            d = dict(d)
+            d["messages"] = []
         return cls(**d)
 
 
@@ -465,6 +472,8 @@ def analyze_thread(pds: str, jwt: str, our_did: str, root_uri: str) -> TrackedTh
     engaged_interlocutors: set[str] = set()  # People we've replied to
     latest_activity = root_record.get("createdAt", "")
     
+    did_to_handle: dict[str, str] = {}
+
     def walk_thread(node: dict, parent_is_ours: bool = False, branch_key: str | None = None, parent_author_did: str | None = None):
         """Recursively walk thread to find our replies and track branches."""
         nonlocal latest_activity
@@ -477,6 +486,8 @@ def analyze_thread(pds: str, jwt: str, our_did: str, root_uri: str) -> TrackedTh
         text = record.get("text", "")
         author_did = author.get("did", "")
         author_handle = author.get("handle", "")
+        if author_did and author_handle:
+            did_to_handle[author_did] = author_handle
         is_ours = author_did == our_did
         
         if created and created > latest_activity:
@@ -498,11 +509,23 @@ def analyze_thread(pds: str, jwt: str, our_did: str, root_uri: str) -> TrackedTh
                     last_activity_at=created,
                     message_count=1,
                     topic_drift=0.0,
-                    branch_score=0.0
+                    branch_score=0.0,
+                    messages=[],
                 )
+            # Track message with explicit reply-to (parent author)
+            branches[uri].messages.append(
+                {
+                    "uri": uri,
+                    "createdAt": created,
+                    "authorHandle": author_handle or "unknown",
+                    "replyToDid": parent_author_did,
+                    "replyToHandle": None,  # filled later when we can resolve handles
+                    "textSnippet": (text or "").replace("\n", " ")[:160],
+                }
+            )
             branch_key = uri
         elif branch_key and branch_key in branches:
-            # This is a reply to one of our branches
+            # This is a reply to one of our branches (or a nested reply within it)
             branch = branches[branch_key]
             if author_handle and author_handle not in branch.interlocutors:
                 branch.interlocutors.append(author_handle)
@@ -512,6 +535,18 @@ def analyze_thread(pds: str, jwt: str, our_did: str, root_uri: str) -> TrackedTh
             branch.message_count += 1
             if created > branch.last_activity_at:
                 branch.last_activity_at = created
+
+            branch.messages.append(
+                {
+                    "uri": uri,
+                    "createdAt": created,
+                    "authorHandle": author_handle or "unknown",
+                    "replyToDid": parent_author_did,
+                    "replyToHandle": None,
+                    "textSnippet": (text or "").replace("\n", " ")[:160],
+                }
+            )
+
             # Accumulate text for topic drift calculation
             if not hasattr(branch, '_accumulated_text'):
                 branch._accumulated_text = ""
@@ -522,7 +557,16 @@ def analyze_thread(pds: str, jwt: str, our_did: str, root_uri: str) -> TrackedTh
             walk_thread(reply, parent_is_ours=is_ours, branch_key=branch_key, parent_author_did=author_did)
     
     walk_thread(thread)
-    
+
+    # Fill reply-to handles for stored messages (helps disambiguate 3rd-party replies)
+    for branch in branches.values():
+        for m in branch.messages:
+            rdid = m.get("replyToDid")
+            if rdid:
+                m["replyToHandle"] = did_to_handle.get(rdid) or ("(unknown)" if rdid != our_did else "echo.0mg.cc")
+            else:
+                m["replyToHandle"] = "(root)"
+
     # Calculate topic drift for each branch
     for branch in branches.values():
         branch_text = getattr(branch, '_accumulated_text', "")
@@ -909,6 +953,13 @@ def cmd_check_branches(args) -> int:
         print(f"\n{status} Branch with @{', @'.join(branch.interlocutors[:3]) or 'unknown'}")
         print(f"  URL: {branch.our_reply_url}")
         print(f"  Messages: {branch.message_count}")
+        if branch.messages:
+            print("  Recent (who → who):")
+            for m in branch.messages[-6:]:
+                ah = m.get("authorHandle") or "unknown"
+                rh = m.get("replyToHandle") or "(unknown)"
+                sn = (m.get("textSnippet") or "").strip()
+                print(f"    @{ah} → @{rh}: {sn[:90]}{'…' if len(sn) > 90 else ''}")
         print(f"  Topic drift: {drift_pct}%{' (ignored - engaged)' if is_engaged else ' (off-topic)' if drift_pct >= 70 else ' (on-topic)' if drift_pct < 30 else ' (drifting)'}")
         print(f"  Branch score: {branch.branch_score:.0f}/100")
         print(f"  Last activity: {branch.last_activity_at}")
