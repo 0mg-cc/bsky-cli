@@ -22,6 +22,7 @@ def like_url(url: str) -> int:
     class A:
         post_url = url
         dry_run = False
+        undo = False
     return like_run(A())
 
 

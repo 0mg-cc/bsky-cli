@@ -257,6 +257,17 @@ def run_scored(args, pds: str, did: str, jwt: str) -> int:
     for r in scored_rows:
         n = r["notification"]
         reason = n.get("reason")
+
+        # follow-back can happen without a post URL
+        if reason == "follow":
+            s = r["score"]
+            prof = r.get("profile") or {}
+            if budgets.follows < budgets.max_follows and (s.get("author_score", 0) >= 12):
+                follow_handle(prof.get("handle") or (n.get("author") or {}).get("handle") or "")
+                budgets.follows += 1
+            elif budgets.follows >= budgets.max_follows:
+                reached.append("follows")
+
         url = r.get("url")
         if not url:
             continue
@@ -289,15 +300,7 @@ def run_scored(args, pds: str, did: str, jwt: str) -> int:
                     quote_url(url, comment)
                     budgets.replies += 1
 
-        # follow-back: only for explicit follow notifications
-        if reason == "follow":
-            prof = r.get("profile") or {}
-            # follow if author quality decent and budget ok
-            if budgets.follows < budgets.max_follows and (s.get("author_score", 0) >= 12):
-                follow_handle(prof.get("handle") or (n.get("author") or {}).get("handle") or "")
-                budgets.follows += 1
-            elif budgets.follows >= budgets.max_follows:
-                reached.append("follows")
+        # (duplicate follow handling removed)
 
         # replies are gated behind allow_replies
         if acts.get("reply") and getattr(args, "allow_replies", False):

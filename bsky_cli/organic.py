@@ -832,7 +832,7 @@ def run(args) -> int:
                     text,
                     facets=facets,
                     embed=this_embed,
-                    allow_repeat=False,
+                    allow_repeat=(i > 1),
                     reply_root=root_ref,
                     reply_parent=parent_ref,
                 )
