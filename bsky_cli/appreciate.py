@@ -207,8 +207,11 @@ Respond in JSON format:
 If nothing is worth selecting, return {{"selections": []}}"""
 
     try:
-        api_key = load_from_pass("api/openrouter", "OPENROUTER_API_KEY")
-        model = load_from_pass("api/openrouter", "OPENROUTER_MODEL") or "google/gemini-2.0-flash-001"
+        env = load_from_pass("api/openrouter") or {}
+        api_key = env.get("OPENROUTER_API_KEY")
+        model = env.get("OPENROUTER_MODEL") or "google/gemini-2.0-flash-001"
+        if not api_key:
+            raise RuntimeError("Missing OPENROUTER_API_KEY in pass api/openrouter")
         
         r = requests.post(
             "https://openrouter.ai/api/v1/chat/completions",
