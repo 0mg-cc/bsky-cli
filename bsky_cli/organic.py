@@ -98,6 +98,20 @@ def should_post(probability: float | None = None) -> bool:
 # CONTENT GENERATION
 # ============================================================================
 
+def clamp_text(text: str, max_chars: int = 280) -> str:
+    """Clamp a post to a strict max length.
+
+    If text exceeds max_chars, it is truncated and ends with "...".
+    """
+    if len(text) <= max_chars:
+        return text
+
+    if max_chars <= 3:
+        return "." * max_chars
+
+    return text[: max_chars - 3] + "..."
+
+
 def select_content_type() -> str:
     """Weighted random selection of content type."""
     content_types = get_content_types()
@@ -459,10 +473,10 @@ def run(args) -> int:
             embed_url = source["embed_url"]
         reason = post_data.get("reason", "")
 
-        # Validate
-        if len(text) > 300:
-            print(f"⚠️  Text too long ({len(text)} chars), truncating...")
-            text = text[:297] + "..."
+        # Validate (strict)
+        if len(text) > 280:
+            print(f"⚠️  Text too long ({len(text)} chars), truncating to 280...")
+            text = clamp_text(text, 280)
 
         print(f"\n{'[DRY RUN] ' if dry_run else ''}Post content:")
         print(f"  Text: {text}")
