@@ -213,8 +213,88 @@ def create_quote_embed(uri: str, cid: str) -> dict:
     }
 
 
-def create_post(pds: str, jwt: str, did: str, text: str, facets=None, embed=None) -> dict:
-    """Create a post."""
+def _fetch_recent_own_posts(pds: str, jwt: str, did: str, limit: int = 10) -> list[str]:
+    """Fetch recent posts by this DID (best-effort). Returns list of post texts."""
+    try:
+        r = requests.get(
+            f"{pds}/xrpc/app.bsky.feed.getAuthorFeed",
+            headers={"Authorization": f"Bearer {jwt}"},
+            params={"actor": did, "limit": int(limit)},
+            timeout=20,
+        )
+        r.raise_for_status()
+        feed = r.json().get("feed", [])
+        out = []
+        for item in feed:
+            post = (item.get("post") or {})
+            record = (post.get("record") or {})
+            txt = (record.get("text") or "").strip()
+            if txt:
+                out.append(txt)
+        return out
+    except Exception:
+        return []
+
+
+_STOPWORDS = {
+    # tiny bilingual-ish set; goal is topic dedupe, not NLP perfection
+    "the","a","an","and","or","but","to","of","in","on","for","with","as","at","by","from",
+    "is","are","was","were","be","been","being","it","this","that","these","those","i","you","we","they",
+    "my","your","our","their","me","him","her","them","us",
+    "de","du","des","le","la","les","un","une","et","ou","mais","à","au","aux","en","sur","pour","avec",
+    "est","sont","été","être","ce","ça","cette","ces","je","tu","il","elle","nous","vous","ils","elles",
+}
+
+
+def _topic_tokens(text: str) -> set[str]:
+    # remove urls/handles/hashtags, keep words
+    text = re.sub(r"https?://\S+", " ", text.lower())
+    text = re.sub(r"[@#][\w.:-]+", " ", text)
+    words = re.findall(r"[a-zà-ÿ0-9']{3,}", text, flags=re.IGNORECASE)
+    toks = {w.strip("'") for w in words if w not in _STOPWORDS}
+    return {t for t in toks if len(t) >= 3}
+
+
+def _is_probably_same_topic(new_text: str, recent_text: str) -> bool:
+    a = _topic_tokens(new_text)
+    b = _topic_tokens(recent_text)
+    if not a or not b:
+        return False
+
+    inter = len(a & b)
+    union = len(a | b)
+    jacc = inter / union if union else 0.0
+
+    # Heuristic: either strong Jaccard, or enough shared "keywords".
+    return jacc >= 0.45 or inter >= 5
+
+
+def create_post(
+    pds: str,
+    jwt: str,
+    did: str,
+    text: str,
+    facets=None,
+    embed=None,
+    *,
+    allow_repeat: bool = False,
+    recent_limit: int = 10,
+) -> dict:
+    """Create a post.
+
+    Preflight: best-effort fetch of last N posts to avoid re-posting on the same topic.
+    """
+    if not allow_repeat:
+        recent = _fetch_recent_own_posts(pds, jwt, did, limit=recent_limit)
+        for rt in recent:
+            if _is_probably_same_topic(text, rt):
+                snippet = rt.replace("\n", " ")[:140]
+                raise SystemExit(
+                    "Refusing to post: looks too similar to one of the last "
+                    f"{recent_limit} posts. Similar to: '{snippet}…'\n"
+                    "Use --allow-repeat to override."
+                )
+
     record = {
         "$type": "app.bsky.feed.post",
         "text": text,
@@ -225,12 +305,12 @@ def create_post(pds: str, jwt: str, did: str, text: str, facets=None, embed=None
         record["facets"] = facets
     if embed:
         record["embed"] = embed
-    
+
     r = requests.post(
         f"{pds}/xrpc/com.atproto.repo.createRecord",
         headers={"Authorization": f"Bearer {jwt}"},
         json={"repo": did, "collection": "app.bsky.feed.post", "record": record},
-        timeout=20
+        timeout=20,
     )
     r.raise_for_status()
     return r.json()
@@ -268,7 +348,15 @@ def run(args) -> int:
     elif args.embed:
         embed = create_external_embed(pds, jwt, args.embed)
 
-    res = create_post(pds, jwt, did, text, facets=facets, embed=embed)
+    res = create_post(
+        pds,
+        jwt,
+        did,
+        text,
+        facets=facets,
+        embed=embed,
+        allow_repeat=getattr(args, "allow_repeat", False),
+    )
     
     uri = res.get("uri", "")
     m = re.match(r"^at://([^/]+)/app\.bsky\.feed\.post/([^/]+)$", uri)

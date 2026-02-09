@@ -117,7 +117,7 @@ def run(args) -> int:
     facets = detect_facets(text)
     embed = create_external_embed(pds, jwt, url)
     
-    res = create_post(pds, jwt, did, text, facets=facets, embed=embed)
+    res = create_post(pds, jwt, did, text, facets=facets, embed=embed, allow_repeat=False)
     
     uri = res.get("uri", "")
     m = re.match(r"^at://([^/]+)/app\.bsky\.feed\.post/([^/]+)$", uri)

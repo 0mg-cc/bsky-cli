@@ -327,7 +327,7 @@ def run(args) -> int:
     facets = detect_facets(text)
     
     # Create post
-    result = create_post(pds, jwt, did, text, facets=facets, embed=embed)
+    result = create_post(pds, jwt, did, text, facets=facets, embed=embed, allow_repeat=False)
     
     if result:
         print(f"\n✓ Posted successfully!")
