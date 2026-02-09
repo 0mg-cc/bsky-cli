@@ -102,6 +102,14 @@ EXAMPLES:
     notify_parser.add_argument("--limit", type=int, default=50, help="Number to fetch (default: 50)")
     notify_parser.add_argument("--no-dm", action="store_true", help="Skip DM check")
 
+    # scoring/triage
+    notify_parser.add_argument("--score", action="store_true", help="Score notifications and propose actions")
+    notify_parser.add_argument("--execute", action="store_true", help="Execute decided actions (likes/follows; replies optional)")
+    notify_parser.add_argument("--max-replies", type=int, default=None, help="Reply budget per run (default 10)")
+    notify_parser.add_argument("--max-likes", type=int, default=None, help="Like budget per run (default 30)")
+    notify_parser.add_argument("--max-follows", type=int, default=None, help="Follow budget per run (default 20)")
+    notify_parser.add_argument("--allow-replies", action="store_true", help="Allow auto-replies when executing")
+
     # reply
     reply_parser = subparsers.add_parser(
         "reply", help="Reply to a post",
