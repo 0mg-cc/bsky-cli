@@ -44,8 +44,9 @@ def get_probability() -> float:
     return get("organic.probability", 0.20)
 
 def get_content_types() -> dict:
+    # Canonical set: actualité, activités, passions (no économie)
     return get("organic.content_types", {
-        "actualité": 2, "économie": 1, "activités": 2, "passions": 4
+        "actualité": 2, "activités": 2, "passions": 4
     })
 
 def get_passion_topics() -> list[str]:

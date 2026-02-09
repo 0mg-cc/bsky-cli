@@ -36,8 +36,8 @@ DEFAULT_CONFIG = {
             [7, 0, 23, 30]             # 7:00 AM to 11:30 PM
         ],
         "content_types": {             # Content types with weights
+            # Canonical set: actualité, activités, passions (no économie)
             "actualité": 2,
-            "économie": 1,
             "activités": 2,
             "passions": 4,
         },
