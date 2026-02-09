@@ -392,6 +392,7 @@ SUBCOMMANDS:
   watch         Start watching a thread
   unwatch       Stop watching a thread
   branches      Check branch relevance in a thread
+  tree          Print a visual ASCII tree of a thread (human-friendly)
   backoff-check Check if monitoring is due (for cron)
   backoff-update Update backoff after check
 
@@ -428,7 +429,14 @@ BACKOFF INTERVALS:
     # threads branches
     threads_branches = threads_sub.add_parser("branches", help="Check branch relevance for a thread")
     threads_branches.add_argument("target", help="Thread URL, URI, or root author handle")
-    
+
+    # threads tree
+    threads_tree = threads_sub.add_parser("tree", help="Print a visual ASCII tree for a thread")
+    threads_tree.add_argument("target", help="Thread URL or at:// URI")
+    threads_tree.add_argument("--depth", type=int, default=6, help="Max depth (default: 6)")
+    threads_tree.add_argument("--snippet", type=int, default=90, help="Snippet length per post (default: 90)")
+    threads_tree.add_argument("--mine-only", action="store_true", help="Only show branches that include our DID")
+
     # threads backoff-check
     threads_backoff_check = threads_sub.add_parser("backoff-check", help="Check if thread check is due (for cron)")
     threads_backoff_check.add_argument("target", help="Thread URL, URI, or root author handle")

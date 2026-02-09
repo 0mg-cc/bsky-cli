@@ -222,6 +222,42 @@ def get_profile(pds: str, jwt: str, actor: str) -> InterlocutorProfile | None:
         return None
 
 
+def _resolve_handle_to_did(pds: str, jwt: str, handle: str) -> str | None:
+    """Resolve handle -> DID (best-effort)."""
+    try:
+        r = requests.get(
+            f"{pds}/xrpc/com.atproto.identity.resolveHandle",
+            headers={"Authorization": f"Bearer {jwt}"},
+            params={"handle": handle},
+            timeout=10,
+        )
+        r.raise_for_status()
+        return r.json().get("did")
+    except Exception:
+        return None
+
+
+def resolve_thread_uri(pds: str, jwt: str, target: str) -> str | None:
+    """Resolve a thread target (URL or at:// URI) to an at:// post URI."""
+    target = (target or "").strip()
+    if target.startswith("at://"):
+        return target
+
+    m = re.match(r"https://bsky\.app/profile/([^/]+)/post/([^/]+)", target)
+    if not m:
+        return None
+
+    actor, rkey = m.groups()
+    if actor.startswith("did:"):
+        did = actor
+    else:
+        did = _resolve_handle_to_did(pds, jwt, actor)
+        if not did:
+            return None
+
+    return f"at://{did}/app.bsky.feed.post/{rkey}"
+
+
 def get_thread(pds: str, jwt: str, uri: str, depth: int = 10) -> dict | None:
     """Fetch a thread by URI."""
     try:
@@ -979,6 +1015,112 @@ def cmd_check_branches(args) -> int:
     return 0
 
 
+def _thread_node_to_lines(node: dict, *, prefix: str, is_last: bool, parent_handle: str | None, snippet_len: int, our_did: str | None, mine_only: bool, did_in_subtree: set[str]) -> list[str]:
+    """Render a thread node to lines (recursive)."""
+    post = node.get("post", {})
+    record = post.get("record", {})
+    author = post.get("author", {})
+    author_handle = author.get("handle") or "unknown"
+    author_did = author.get("did") or ""
+    text = (record.get("text") or "").replace("\n", " ").strip()
+
+    # If mine_only, skip nodes that are not in a subtree containing our_did
+    if mine_only and our_did and (author_did not in did_in_subtree) and (our_did not in did_in_subtree):
+        # This check is conservative; we compute did_in_subtree per node in the caller.
+        pass
+
+    connector = "└─" if is_last else "├─"
+    who = f"@{author_handle}"
+    if our_did and author_did == our_did:
+        who = f"@{author_handle} [me]"
+
+    to = "@(root)" if not parent_handle else f"@{parent_handle}"
+    snippet = text[:snippet_len] + ("…" if len(text) > snippet_len else "")
+
+    lines = [f"{prefix}{connector} {who} → {to}: {snippet}"]
+
+    child_prefix = prefix + ("   " if is_last else "│  ")
+    replies = node.get("replies", []) or []
+    for i, rep in enumerate(replies):
+        last = (i == len(replies) - 1)
+        lines.extend(_thread_node_to_lines(
+            rep,
+            prefix=child_prefix,
+            is_last=last,
+            parent_handle=author_handle,
+            snippet_len=snippet_len,
+            our_did=our_did,
+            mine_only=mine_only,
+            did_in_subtree=_collect_dids(rep),
+        ))
+    return lines
+
+
+def _collect_dids(node: dict) -> set[str]:
+    """Collect all author DIDs in a subtree."""
+    out: set[str] = set()
+    post = node.get("post", {})
+    author = post.get("author", {})
+    did = author.get("did")
+    if did:
+        out.add(did)
+    for r in node.get("replies", []) or []:
+        out |= _collect_dids(r)
+    return out
+
+
+def cmd_tree(args) -> int:
+    """Print an ASCII tree for a thread (human-friendly)."""
+    print("🔗 Connecting to BlueSky...")
+    pds, did, jwt, handle = get_session()
+
+    target = getattr(args, "target", "")
+    depth = int(getattr(args, "depth", 6) or 6)
+    snippet_len = int(getattr(args, "snippet", 90) or 90)
+    mine_only = bool(getattr(args, "mine_only", False))
+
+    root_uri = resolve_thread_uri(pds, jwt, target)
+    if not root_uri:
+        print(f"❌ Could not resolve thread target: {target}")
+        return 1
+
+    thread = get_thread(pds, jwt, root_uri, depth=depth)
+    if not thread:
+        print("❌ Could not fetch thread")
+        return 1
+
+    root_post = thread.get("post", {})
+    root_record = root_post.get("record", {})
+    root_author = root_post.get("author", {})
+    root_handle = root_author.get("handle") or "unknown"
+    root_text = (root_record.get("text") or "").replace("\n", " ").strip()
+
+    print(f"\nThread: {uri_to_url(root_uri)}")
+    print(f"Root: @{root_handle}: {root_text[:snippet_len]}{'…' if len(root_text) > snippet_len else ''}")
+    print("" )
+
+    replies = thread.get("replies", []) or []
+    for i, rep in enumerate(replies):
+        last = (i == len(replies) - 1)
+        dids = _collect_dids(rep)
+        if mine_only and did not in dids:
+            continue
+        lines = _thread_node_to_lines(
+            rep,
+            prefix="",
+            is_last=last,
+            parent_handle=root_handle,
+            snippet_len=snippet_len,
+            our_did=did,
+            mine_only=mine_only,
+            did_in_subtree=dids,
+        )
+        for ln in lines:
+            print(ln)
+
+    return 0
+
+
 def cmd_backoff_check(args) -> int:
     """
     Check if we should run a thread check based on backoff state.
@@ -1162,6 +1304,8 @@ def run(args) -> int:
         return cmd_unwatch(args)
     elif args.threads_command == "branches":
         return cmd_check_branches(args)
+    elif args.threads_command == "tree":
+        return cmd_tree(args)
     elif args.threads_command == "backoff-check":
         return cmd_backoff_check(args)
     elif args.threads_command == "backoff-update":
