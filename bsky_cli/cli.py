@@ -490,6 +490,7 @@ TYPICAL CRON SETUP:
     organic_parser.add_argument("--dry-run", action="store_true", help="Preview without posting")
     organic_parser.add_argument("--force", action="store_true", help="Ignore time window and probability")
     organic_parser.add_argument("--probability", type=float, default=None, help="Posting probability (default: from config)")
+    organic_parser.add_argument("--max-posts", type=int, default=None, help="Max posts in a thread when text exceeds 280 (default: from config organic.max_posts, fallback 3)")
 
     # config
     config_parser = subparsers.add_parser(

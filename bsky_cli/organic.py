@@ -98,18 +98,227 @@ def should_post(probability: float | None = None) -> bool:
 # CONTENT GENERATION
 # ============================================================================
 
-def clamp_text(text: str, max_chars: int = 280) -> str:
-    """Clamp a post to a strict max length.
+def validate_thread_posts(
+    posts: list[str],
+    *,
+    max_posts: int = 3,
+    max_chars: int = 280,
+    min_last_chars: int = 60,
+    min_balance_ratio: float = 0.35,
+) -> bool:
+    """Validate a candidate thread.
 
-    If text exceeds max_chars, it is truncated and ends with "...".
+    Rules:
+    - 1..max_posts posts
+    - each post <= max_chars
+    - last post has at least min_last_chars of non-hashtag content
+    - avoid extremely imbalanced splits: shortest/longest >= min_balance_ratio
     """
-    if len(text) <= max_chars:
-        return text
+    if not posts or len(posts) > max_posts:
+        return False
 
-    if max_chars <= 3:
-        return "." * max_chars
+    lengths = [len(p) for p in posts]
+    if any(l == 0 or l > max_chars for l in lengths):
+        return False
 
-    return text[: max_chars - 3] + "..."
+    # last-post content length excluding trailing hashtags
+    last = posts[-1].strip()
+    base_last, _tags = split_trailing_hashtags(last)
+    if len(base_last.strip()) < min_last_chars:
+        return False
+
+    mn, mx = min(lengths), max(lengths)
+    if mx == 0:
+        return False
+    if (mn / mx) < min_balance_ratio:
+        return False
+
+    return True
+
+
+def split_trailing_hashtags(text: str) -> tuple[str, str]:
+    """Split trailing hashtags from a post.
+
+    Returns (base_text, hashtags_with_leading_space_or_empty).
+
+    We only treat hashtags at the very end as hashtags, e.g.:
+    "hello world #AI #FOSS".
+    """
+    t = text.rstrip()
+    if not t:
+        return "", ""
+
+    parts = t.split()
+    i = len(parts)
+    while i > 0 and parts[i - 1].startswith("#") and len(parts[i - 1]) > 1:
+        i -= 1
+
+    if i == len(parts):
+        return t, ""
+
+    base = " ".join(parts[:i]).rstrip()
+    tags = " ".join(parts[i:]).strip()
+    if tags:
+        tags = " " + tags
+    return base, tags
+
+
+def extract_urls(text: str) -> list[str]:
+    """Extract http(s) URLs from a blob of text."""
+    import re
+
+    urls = re.findall(r"https?://[^\s\)\]\>\"']+", text)
+    # de-dupe while preserving order
+    seen = set()
+    out: list[str] = []
+    for u in urls:
+        if u not in seen:
+            seen.add(u)
+            out.append(u)
+    return out
+
+
+def _best_cut(s: str, limit: int) -> int:
+    """Find a nice cut position <= limit (prefer paragraph, then sentence, then space)."""
+    if len(s) <= limit:
+        return len(s)
+
+    window = s[: limit + 1]
+    for sep in ("\n\n", ". ", "! ", "? ", "; ", ": ", " "):
+        idx = window.rfind(sep)
+        if idx != -1:
+            return idx + (0 if sep == "\n\n" else 1)  # keep punctuation char
+
+    return limit
+
+
+def apply_thread_prefixes(posts: list[str], *, max_chars: int = 280) -> list[str]:
+    """Prefix each post with (i/n) and keep each post within max_chars.
+
+    If a post becomes too long, it is trimmed (best-effort) at a word boundary.
+    """
+    if len(posts) <= 1:
+        return posts
+
+    n = len(posts)
+    out: list[str] = []
+    for i, p in enumerate(posts, start=1):
+        prefix = f"({i}/{n}) "
+        room = max_chars - len(prefix)
+        t = p.strip()
+        if len(t) > room:
+            # trim at last space within room
+            trimmed = t[:room].rstrip()
+            if " " in trimmed:
+                trimmed = trimmed.rsplit(" ", 1)[0].rstrip()
+            t = trimmed
+        out.append(prefix + t)
+
+    return out
+
+
+def split_text_to_thread(
+    text: str,
+    *,
+    max_posts: int = 3,
+    max_chars: int = 280,
+    min_last_chars: int = 60,
+) -> list[str]:
+    """Deterministic fallback split.
+
+    - Keeps trailing hashtags only in the last post.
+    - Tries to keep posts balanced.
+    """
+    base, tags = split_trailing_hashtags(text)
+    base = " ".join(base.split())  # normalize whitespace
+
+    if len(base + tags) <= max_chars:
+        return [(base + tags).strip()]
+
+    # We'll reserve space for hashtags in the last post.
+    tags_len = len(tags)
+
+    # Greedy splitting with a feasibility check.
+    remaining = base
+    posts: list[str] = []
+
+    for idx in range(1, max_posts + 1):
+        is_last = idx == max_posts
+        if is_last:
+            # Whatever remains must fit with tags.
+            chunk = remaining.strip()
+            # Ensure the last chunk has enough base text.
+            if len(chunk) < min_last_chars:
+                # If too short, steal from previous post.
+                if posts:
+                    prev = posts.pop()
+                    combined = (prev + " " + chunk).strip()
+                    # Re-split combined into two balanced parts.
+                    cut = _best_cut(combined, max_chars - tags_len)
+                    left = combined[:cut].strip()
+                    right = combined[cut:].strip()
+                    posts.append(left)
+                    chunk = right
+
+            # Clamp if still too long: hard cut
+            if len(chunk) + tags_len > max_chars:
+                cut = _best_cut(chunk, max_chars - tags_len)
+                left = chunk[:cut].strip()
+                right = chunk[cut:].strip()
+                posts.append(left)
+                chunk = right
+
+            posts.append((chunk + tags).strip())
+            remaining = ""
+            break
+
+        # Not last: leave enough room for remaining posts + last min.
+        posts_left = max_posts - idx
+        # heuristic: allocate a fair share
+        target = max_chars
+        cut = _best_cut(remaining, target)
+        chunk = remaining[:cut].strip()
+        remaining = remaining[cut:].strip()
+
+        if not chunk:
+            continue
+        posts.append(chunk)
+
+        # If the rest already fits as a last post, finish early.
+        if remaining and (len(remaining) + tags_len) <= max_chars:
+            posts.append((remaining + tags).strip())
+            remaining = ""
+            break
+
+    # If still remaining, append it (last resort) by hard chunking.
+    while remaining:
+        cut = _best_cut(remaining, max_chars)
+        posts.append(remaining[:cut].strip())
+        remaining = remaining[cut:].strip()
+
+    # Ensure hashtags are only in the last post.
+    if tags and not posts[-1].endswith(tags.strip()):
+        # Move tags to last.
+        for i in range(len(posts)):
+            posts[i] = posts[i].replace(tags.strip(), "").strip()
+        posts[-1] = (posts[-1] + tags).strip()
+
+    # Enforce constraints: keep only max_posts, merge overflow into last.
+    if len(posts) > max_posts:
+        head = posts[: max_posts - 1]
+        tail = " ".join(posts[max_posts - 1 :]).strip()
+        posts = head + [tail]
+
+    # Final safety: ensure <= max_chars by trimming tail words.
+    while len(posts[-1]) > max_chars:
+        posts[-1] = posts[-1][:max_chars].rstrip()
+
+    # Balance sanity: if invalid, reduce to fewer posts.
+    if not validate_thread_posts(posts, max_posts=max_posts, max_chars=max_chars, min_last_chars=min_last_chars):
+        if max_posts > 2:
+            return split_text_to_thread(text, max_posts=2, max_chars=max_chars, min_last_chars=min_last_chars)
+
+    return posts
 
 
 def select_content_type() -> str:
@@ -309,7 +518,7 @@ def load_guidelines() -> str:
     return ""
 
 
-def generate_post_with_llm(content_type: str, source: dict, guidelines: str) -> dict | None:
+def generate_post_with_llm(content_type: str, source: dict, guidelines: str, *, max_posts: int = 3) -> dict | None:
     """Use LLM to generate post content.
     
     Returns dict with:
@@ -330,11 +539,15 @@ def generate_post_with_llm(content_type: str, source: dict, guidelines: str) -> 
         # Read latest revue
         revue_files = sorted(source["source_path"].glob("*.md"), reverse=True)
         if revue_files:
-            context = revue_files[0].read_text()[:3000]
+            raw = revue_files[0].read_text()
+            source["url_candidates"] = extract_urls(raw)
+            context = raw[:3000]
     elif source["source_type"] == "revue_finance" and source["source_path"]:
         revue_files = sorted(source["source_path"].glob("*.md"), reverse=True)
         if revue_files:
-            context = revue_files[0].read_text()[:3000]
+            raw = revue_files[0].read_text()
+            source["url_candidates"] = extract_urls(raw)
+            context = raw[:3000]
     elif source["source_type"] == "passion":
         context = f"Topic to explore: {source['topic']}"
     elif source["source_type"] == "blog":
@@ -349,7 +562,36 @@ def generate_post_with_llm(content_type: str, source: dict, guidelines: str) -> 
         else:
             context = "Promote a recent blog post (keep it concrete; no private info)."
     elif source["source_type"] == "sessions":
-        context = "Share something about current work/projects (NO SECRETS, no private info)"
+        # Ground the post in recent local artifacts (safe, no private info).
+        signals: list[str] = []
+        try:
+            mem_dir = Path.home() / "personas/echo/memory"
+            daily = sorted(mem_dir.glob("20??-??-??.md"), reverse=True)[:2]
+            for p in daily:
+                txt = p.read_text()[:1500]
+                signals.append(f"Memory ({p.name}):\n{txt}")
+        except Exception:
+            pass
+
+        # Recent commits in a couple repos
+        for repo in [Path.home() / "projects/bsky-cli", Path.home() / "personas/echo"]:
+            try:
+                out = subprocess.check_output(
+                    ["git", "-C", str(repo), "log", "-n", "12", "--pretty=format:%s"],
+                    text=True,
+                    stderr=subprocess.DEVNULL,
+                )
+                if out.strip():
+                    signals.append(f"Git ({repo.name}) recent commits:\n" + out.strip())
+            except Exception:
+                pass
+
+        context = (
+            "Pick ONE concrete thing from these signals and post about it (no secrets, no private info):\n\n"
+            + "\n\n".join(signals)
+            if signals
+            else "Share something about current work/projects (NO SECRETS, no private info)"
+        )
     
     prompt = f"""You are Echo, an AI ops agent posting on BlueSky (@echo.0mg.cc).
 
@@ -364,20 +606,34 @@ Write an organic post about: {content_type}
 {context if context else "(Generate from your knowledge/interests)"}
 
 ## RULES
-- Max 280 characters (STRICT)
 - English only
-- Include 1-2 relevant hashtags (e.g. #AI #Linux #FOSS #automation)
-- {"MUST include a source URL for embed" if source['requires_embed'] else "No embed required"}
+- If you can fit it in one post: return a single post.
+- If it's too long: return a thread (max {max_posts} posts) instead.
+- Each post must be <= 280 characters (STRICT)
+- Hashtags: ONLY in the LAST post of the thread (1-2 hashtags)
+- {"Include an embed_url (source link)" if source['requires_embed'] else "No embed required"}
 - Be genuine, not generic
 - Questions drive engagement
 - Show > Tell
 
 ## OUTPUT FORMAT
-Return ONLY a JSON object:
+Return ONLY a JSON object. Choose ONE of the two shapes:
+
+A) Single post:
 {{
-  "text": "your post text (max 280 chars)",
+  "text": "... (<= 280 chars)",
   "embed_url": "https://..." or null,
   "reason": "why this post"
+}}
+
+B) Thread:
+{{
+  "posts": [
+    {{"text": "... (<= 280 chars)"}},
+    {{"text": "... (<= 280 chars)"}}
+  ],
+  "embed_url": "https://..." or null,
+  "reason": "why this thread"
 }}
 
 Return ONLY valid JSON, no markdown."""
@@ -418,6 +674,7 @@ def run(args) -> int:
     probability = getattr(args, 'probability', None) or get_probability()
     dry_run = getattr(args, 'dry_run', False)
     force = getattr(args, 'force', False)
+    max_posts = getattr(args, "max_posts", None) or int(get("organic.max_posts", 3))
     
     tz = get_timezone()
     now = datetime.now(tz)
@@ -460,29 +717,45 @@ def run(args) -> int:
 
         # Generate post
         print("🤖 Generating post...")
-        post_data = generate_post_with_llm(content_type, source, guidelines)
+        post_data = generate_post_with_llm(content_type, source, guidelines, max_posts=max_posts)
 
         if not post_data:
             print("❌ Failed to generate post")
             return 1
 
-        text = post_data.get("text", "")
+        # Option A: LLM can output either a single post or a thread.
+        if "posts" in post_data and isinstance(post_data.get("posts"), list):
+            raw_posts = [str(p.get("text", "")).strip() for p in post_data["posts"] if isinstance(p, dict)]
+        else:
+            raw_posts = [str(post_data.get("text", "")).strip()]
+
         embed_url = post_data.get("embed_url")
         if content_type == "blog_teaser" and source.get("embed_url"):
             # Keep teaser embeds deterministic (avoid LLM picking a random URL).
             embed_url = source["embed_url"]
+
         reason = post_data.get("reason", "")
 
-        # Validate (strict)
-        if len(text) > 280:
-            print(f"⚠️  Text too long ({len(text)} chars), truncating to 280...")
-            text = clamp_text(text, 280)
+        # If a single-post output is too long, fall back to deterministic splitting.
+        if len(raw_posts) == 1 and len(raw_posts[0]) > 280:
+            raw_posts = split_text_to_thread(raw_posts[0], max_posts=max_posts)
+
+        # Validate thread output; if invalid, fallback split from joined text.
+        if not validate_thread_posts(raw_posts, max_posts=max_posts):
+            joined = "\n\n".join([p for p in raw_posts if p]).strip()
+            raw_posts = split_text_to_thread(joined, max_posts=max_posts)
+
+        # Add (i/n) prefixes for threads.
+        if len(raw_posts) > 1:
+            raw_posts = apply_thread_prefixes(raw_posts, max_chars=280)
 
         print(f"\n{'[DRY RUN] ' if dry_run else ''}Post content:")
-        print(f"  Text: {text}")
+        for i, t in enumerate(raw_posts, start=1):
+            label = f"  Post {i}/{len(raw_posts)}" if len(raw_posts) > 1 else "  Text"
+            print(f"{label}: {t}")
+            print(f"    Length: {len(t)} chars")
         print(f"  Embed: {embed_url or '(none)'}")
         print(f"  Reason: {reason}")
-        print(f"  Length: {len(text)} chars")
 
         if dry_run:
             print("\n✓ Dry run complete")
@@ -493,29 +766,70 @@ def run(args) -> int:
         pds, did, jwt, handle = get_session()
         print(f"✓ Logged in as @{handle}")
 
-        # Fetch embed if URL provided
+        # Fetch embed (ensure OG image works; otherwise try alternate URLs)
         embed = None
-        if embed_url:
-            print(f"🔗 Fetching embed for {embed_url}...")
-            embed = create_external_embed(pds, jwt, embed_url)
-            if embed:
-                print(f"✓ Embed ready: {embed.get('external', {}).get('title', '')[:50]}")
-            else:
-                print("⚠️  Could not fetch embed, posting without")
+        if embed_url or source.get("url_candidates"):
+            candidates = []
+            if source.get("url_candidates"):
+                candidates.extend([u for u in source["url_candidates"] if isinstance(u, str)])
+            if embed_url:
+                candidates.insert(0, embed_url)
 
-        # Detect facets (makes hashtags and URLs clickable)
-        facets = detect_facets(text)
+            # de-dupe
+            seen = set()
+            candidates = [u for u in candidates if not (u in seen or seen.add(u))]
+
+            # Require thumbnail image for "actualité" embeds
+            require_thumb = bool(source.get("requires_embed"))
+
+            for url in candidates[:12]:
+                try:
+                    print(f"🔗 Fetching embed for {url}...")
+                    e = create_external_embed(pds, jwt, url)
+                    if require_thumb and not (e and e.get("external", {}).get("thumb")):
+                        print("⚠️  Embed missing thumb; trying next URL")
+                        continue
+                    embed = e
+                    embed_url = url
+                    if embed:
+                        print(f"✓ Embed ready: {embed.get('external', {}).get('title', '')[:50]}")
+                    break
+                except Exception:
+                    continue
+
+            if source.get("requires_embed") and not embed:
+                print("❌ Could not build a valid embed with OG image; changing source...")
+                if attempt < max_attempts:
+                    continue
+                return 1
 
         try:
-            result = create_post(
-                pds,
-                jwt,
-                did,
-                text,
-                facets=facets,
-                embed=embed,
-                allow_repeat=False,
-            )
+            # Thread posting (root + replies)
+            root_ref = None
+            parent_ref = None
+            result = None
+
+            for i, text in enumerate(raw_posts, start=1):
+                facets = detect_facets(text)
+                this_embed = embed if i == 1 else None
+
+                result = create_post(
+                    pds,
+                    jwt,
+                    did,
+                    text,
+                    facets=facets,
+                    embed=this_embed,
+                    allow_repeat=False,
+                    reply_root=root_ref,
+                    reply_parent=parent_ref,
+                )
+
+                # Update refs for subsequent replies
+                ref = {"uri": result.get("uri"), "cid": result.get("cid")}
+                if not root_ref:
+                    root_ref = ref
+                parent_ref = ref
         except SystemExit as e:
             msg = str(e)
             if "looks too similar" in msg and attempt < max_attempts:
@@ -567,8 +881,10 @@ BEHAVIOR:
     parser.add_argument("--dry-run", action="store_true", help="Preview without posting")
     parser.add_argument("--force", action="store_true", help="Ignore time window and probability")
     parser.add_argument("--probability", type=float, default=None,
-                        help="Posting probability (default: from config, 0.20)")
-    
+                        help="Posting probability (default: from config)")
+    parser.add_argument("--max-posts", type=int, default=None,
+                        help="Max posts in a thread when text exceeds 280 (default: from config organic.max_posts, fallback 3)")
+
     args = parser.parse_args()
     return run(args)
 
