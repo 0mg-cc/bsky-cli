@@ -279,6 +279,8 @@ def create_post(
     *,
     allow_repeat: bool = False,
     recent_limit: int = 10,
+    reply_root: dict | None = None,
+    reply_parent: dict | None = None,
 ) -> dict:
     """Create a post.
 
@@ -301,6 +303,13 @@ def create_post(
         "createdAt": utc_now_iso(),
         "langs": ["en"],
     }
+
+    if reply_root and reply_parent:
+        record["reply"] = {
+            "root": {"uri": reply_root["uri"], "cid": reply_root["cid"]},
+            "parent": {"uri": reply_parent["uri"], "cid": reply_parent["cid"]},
+        }
+
     if facets:
         record["facets"] = facets
     if embed:

@@ -104,6 +104,11 @@ def run(args) -> int:
     """Execute notify command."""
     pds, did, jwt, _ = get_session()
 
+    # New: scoring/triage mode
+    if getattr(args, "score", False) or getattr(args, "execute", False):
+        from .notify_scored import run_scored
+        return run_scored(args, pds, did, jwt)
+
     notifications = get_notifications(pds, jwt, limit=args.limit)
     
     # Check DMs
