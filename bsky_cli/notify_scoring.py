@@ -202,18 +202,31 @@ def score_notification(n: dict, *, profile: dict, relationship_total: int | None
 
 
 def decide_actions(s: dict) -> dict:
-    """Return {like, reply, requote} booleans based on thresholds."""
+    """Return {like, reply, requote} booleans based on thresholds.
+
+    Note: requote is handled at a higher level (needs maybe.sh + LLM comment),
+    but we expose a recommended flag when content quality is high.
+    """
     score = float(s.get("score") or 0)
     question_clear = bool(s.get("question_clear"))
     adds_value = bool(s.get("adds_value"))
+    content_quality = float(s.get("content_quality_score") or 0)
 
+    # Base decisions
     if score >= 80:
-        return {"like": True, "reply": True, "requote": False}
+        like = True
+        reply = True
+    elif 60 <= score < 80:
+        like = True
+        reply = bool(question_clear)
+    elif 40 <= score < 60:
+        like = bool(adds_value)
+        reply = False
+    else:
+        like = False
+        reply = False
 
-    if 60 <= score < 80:
-        return {"like": True, "reply": bool(question_clear), "requote": False}
+    # Candidate for requote if very high quality.
+    requote = content_quality >= 20
 
-    if 40 <= score < 60:
-        return {"like": bool(adds_value), "reply": False, "requote": False}
-
-    return {"like": False, "reply": False, "requote": False}
+    return {"like": like, "reply": reply, "requote": requote}

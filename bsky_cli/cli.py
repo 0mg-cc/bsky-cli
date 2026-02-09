@@ -109,6 +109,7 @@ EXAMPLES:
     notify_parser.add_argument("--max-likes", type=int, default=None, help="Like budget per run (default 30)")
     notify_parser.add_argument("--max-follows", type=int, default=None, help="Follow budget per run (default 20)")
     notify_parser.add_argument("--allow-replies", action="store_true", help="Allow auto-replies when executing")
+    notify_parser.add_argument("--quiet", action="store_true", help="Suppress output unless there is an error or budgets are hit")
 
     # reply
     reply_parser = subparsers.add_parser(

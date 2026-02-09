@@ -12,7 +12,7 @@ from .http import requests
 
 from . import interlocutors
 from .auth import load_from_pass
-from .notify_actions import follow_handle, like_url, reply_to_url
+from .notify_actions import follow_handle, like_url, reply_to_url, quote_url
 from .notify_scoring import decide_actions, score_notification
 
 
@@ -108,11 +108,67 @@ Return ONLY JSON:
         return None
 
 
+def _generate_quote_comment_llm(*, their_text: str, history: str, author_handle: str) -> str | None:
+    """Generate short quote-repost commentary (<= 280)."""
+    env = load_from_pass("api/openrouter")
+    if not env or "OPENROUTER_API_KEY" not in env:
+        return None
+
+    api_key = env["OPENROUTER_API_KEY"]
+
+    prompt = f"""You are Echo (@echo.0mg.cc), writing a quote-repost comment.
+
+## CONTEXT
+Quoted author: @{author_handle}
+Quoted text:
+{their_text}
+
+{history}
+
+## RULES
+- Write ONE quote-repost comment (not a reply).
+- <= 280 characters (STRICT)
+- English only
+- Add 1 concrete thought (agreement, extension, or a question).
+- No generic praise.
+- No private info.
+
+Return ONLY JSON:
+{{"text": "..."}}
+"""
+
+    try:
+        r = requests.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": "google/gemini-3-flash-preview",
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.7,
+            },
+            timeout=60,
+        )
+        r.raise_for_status()
+        content = r.json()["choices"][0]["message"]["content"].strip()
+        if content.startswith("```"):
+            content = "\n".join(content.split("\n")[1:-1])
+        data = json.loads(content)
+        text = str(data.get("text", "")).strip()
+        if len(text) > 280:
+            text = text[:277].rstrip() + "..."
+        return text
+    except Exception:
+        return None
+
+
 @dataclass
 class Budgets:
     max_replies: int = 10
     max_likes: int = 30
-    max_follows: int = 20
+    max_follows: int = 5
 
     replies: int = 0
     likes: int = 0
@@ -132,10 +188,13 @@ def run_scored(args, pds: str, did: str, jwt: str) -> int:
         print(json.dumps({"notifications": notifications}, indent=2))
         return 0
 
+    # Defaults come from CLI flags, then config keys, then hard-coded fallbacks.
+    from .config import get
+
     budgets = Budgets(
-        max_replies=int(getattr(args, "max_replies", None) or 10),
-        max_likes=int(getattr(args, "max_likes", None) or 30),
-        max_follows=int(getattr(args, "max_follows", None) or 20),
+        max_replies=int(getattr(args, "max_replies", None) or get("notify.budgets.max_replies", 10)),
+        max_likes=int(getattr(args, "max_likes", None) or get("notify.budgets.max_likes", 30)),
+        max_follows=int(getattr(args, "max_follows", None) or get("notify.budgets.max_follows", 5)),
     )
 
     # Score + decide
@@ -165,7 +224,7 @@ def run_scored(args, pds: str, did: str, jwt: str) -> int:
     scored_rows.sort(key=lambda r: r["score"]["score"], reverse=True)
 
     # Human report
-    if getattr(args, "score", False) or not getattr(args, "execute", False):
+    if (getattr(args, "score", False) or not getattr(args, "execute", False)) and not getattr(args, "quiet", False):
         print(f"=== BlueSky Notifications (scored) — {len(scored_rows)} new ===\n")
         for r in scored_rows:
             n = r["notification"]
@@ -178,7 +237,7 @@ def run_scored(args, pds: str, did: str, jwt: str) -> int:
                 f"[{reason}] @{a.get('handle')} score={s['score']:.1f} "
                 f"(author={s['author_score']:.1f} rel={s['relationship_score']:.1f} "
                 f"content={s['content_quality_score']:.1f} ctx={s['context_score']:.1f}) "
-                f"-> like={acts['like']} reply={acts['reply']}"
+                f"-> like={acts['like']} reply={acts['reply']} requote={acts.get('requote', False)}"
             )
             if text:
                 print(f"  \"{text[:240]}{'...' if len(text) > 240 else ''}\"")
@@ -203,18 +262,38 @@ def run_scored(args, pds: str, did: str, jwt: str) -> int:
             continue
 
         acts = r["actions"]
+        s = r["score"]
 
+        # Like
         if acts.get("like") and budgets.likes < budgets.max_likes:
             like_url(url)
             budgets.likes += 1
         elif acts.get("like") and budgets.likes >= budgets.max_likes:
             reached.append("likes")
 
+        # Requote (quote-repost) — only when content quality is high
+        if acts.get("requote") and float(s.get("content_quality_score") or 0) >= 20:
+            if budgets.replies >= budgets.max_replies:
+                reached.append("replies")
+            elif _maybe(0.5):
+                author = n.get("author", {})
+                their_text = (n.get("record") or {}).get("text", "") or ""
+                hist = interlocutors.format_context_for_llm(author.get("did", ""), max_interactions=2)
+                comment = _generate_quote_comment_llm(
+                    their_text=their_text,
+                    history=hist,
+                    author_handle=author.get("handle", ""),
+                )
+                if comment:
+                    # quote-repost + like already handled above
+                    quote_url(url, comment)
+                    budgets.replies += 1
+
         # follow-back: only for explicit follow notifications
         if reason == "follow":
             prof = r.get("profile") or {}
             # follow if author quality decent and budget ok
-            if budgets.follows < budgets.max_follows and (r["score"].get("author_score", 0) >= 12):
+            if budgets.follows < budgets.max_follows and (s.get("author_score", 0) >= 12):
                 follow_handle(prof.get("handle") or (n.get("author") or {}).get("handle") or "")
                 budgets.follows += 1
             elif budgets.follows >= budgets.max_follows:
@@ -243,12 +322,13 @@ def run_scored(args, pds: str, did: str, jwt: str) -> int:
         reached = sorted(set(reached))
         print(f"⚠️  Budgets reached: {', '.join(reached)}")
 
-    print(
-        f"=== Actions executed ===\n"
-        f"likes: {budgets.likes}/{budgets.max_likes}\n"
-        f"replies: {budgets.replies}/{budgets.max_replies}\n"
-        f"follows: {budgets.follows}/{budgets.max_follows}\n"
-    )
+    if not getattr(args, "quiet", False):
+        print(
+            f"=== Actions executed ===\n"
+            f"likes: {budgets.likes}/{budgets.max_likes}\n"
+            f"replies(+quotes): {budgets.replies}/{budgets.max_replies}\n"
+            f"follows: {budgets.follows}/{budgets.max_follows}\n"
+        )
 
     newest = max((n.get("indexedAt", "") for n in notifications), default="")
     if newest:
