@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from types import SimpleNamespace
 
 from .auth import get_session
 from .follow import run as follow_run
@@ -19,33 +20,26 @@ def post_url_from_uri(uri: str) -> str | None:
 
 
 def like_url(url: str) -> int:
-    class A:
-        post_url = url
-        dry_run = False
-        undo = False
-    return like_run(A())
+    args = SimpleNamespace(post_url=url, dry_run=False, undo=False)
+    return like_run(args)
 
 
 def follow_handle(handle: str) -> int:
-    class A:
-        handle = handle
-        dry_run = False
-    return follow_run(A())
+    args = SimpleNamespace(handle=handle, dry_run=False)
+    return follow_run(args)
 
 
 def reply_to_url(url: str, text: str) -> int:
-    class A:
-        post_url = url
-        text = text
-        dry_run = False
-    return reply_run(A())
+    args = SimpleNamespace(post_url=url, text=text, dry_run=False)
+    return reply_run(args)
 
 
 def quote_url(url: str, text: str) -> int:
-    class A:
-        text = text
-        embed = None
-        quote = url
-        allow_repeat = False
-        dry_run = False
-    return post_run(A())
+    args = SimpleNamespace(
+        text=text,
+        embed=None,
+        quote=url,
+        allow_repeat=False,
+        dry_run=False,
+    )
+    return post_run(args)
