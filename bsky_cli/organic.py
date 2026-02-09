@@ -573,8 +573,20 @@ def generate_post_with_llm(content_type: str, source: dict, guidelines: str, *, 
         except Exception:
             pass
 
-        # Recent commits in a couple repos
-        for repo in [Path.home() / "projects/bsky-cli", Path.home() / "personas/echo"]:
+        # Recent commits across relevant repos (broader net)
+        repos = [
+            Path.home() / "projects/bsky-cli",
+            Path.home() / "personas/echo",
+            Path.home() / "projects/skills",
+            Path.home() / "projects/stocks",
+            Path.home() / "projects/typst-templates",
+            Path.home() / "projects/briefings",
+            Path.home() / "projects/voila-assistant",
+            Path.home() / "projects/lufa-assistant",
+        ]
+        for repo in repos:
+            if not (repo / ".git").exists():
+                continue
             try:
                 out = subprocess.check_output(
                     ["git", "-C", str(repo), "log", "-n", "12", "--pretty=format:%s"],
