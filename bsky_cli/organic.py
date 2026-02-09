@@ -269,73 +269,101 @@ def run(args) -> int:
     
     print(f"✓ Posting check passed")
     
-    # Select content type
-    content_type = select_content_type()
-    print(f"📝 Content type: {content_type}")
-    
-    # Get source
-    source = get_source_for_type(content_type)
-    print(f"📚 Source: {source['source_type']}" + 
-          (f" ({source['topic']})" if source.get('topic') else ""))
-    
     # Load guidelines
     guidelines = load_guidelines()
-    
-    # Generate post
-    print("🤖 Generating post...")
-    post_data = generate_post_with_llm(content_type, source, guidelines)
-    
-    if not post_data:
-        print("❌ Failed to generate post")
-        return 1
-    
-    text = post_data.get("text", "")
-    embed_url = post_data.get("embed_url")
-    reason = post_data.get("reason", "")
-    
-    # Validate
-    if len(text) > 300:
-        print(f"⚠️  Text too long ({len(text)} chars), truncating...")
-        text = text[:297] + "..."
-    
-    print(f"\n{'[DRY RUN] ' if dry_run else ''}Post content:")
-    print(f"  Text: {text}")
-    print(f"  Embed: {embed_url or '(none)'}")
-    print(f"  Reason: {reason}")
-    print(f"  Length: {len(text)} chars")
-    
-    if dry_run:
-        print("\n✓ Dry run complete")
-        return 0
-    
-    # Post
-    print("\n🔗 Connecting to BlueSky...")
-    pds, did, jwt, handle = get_session()
-    print(f"✓ Logged in as @{handle}")
-    
-    # Fetch embed if URL provided
-    embed = None
-    if embed_url:
-        print(f"🔗 Fetching embed for {embed_url}...")
-        embed = create_external_embed(pds, jwt, embed_url)
-        if embed:
-            print(f"✓ Embed ready: {embed.get('external', {}).get('title', '')[:50]}")
-        else:
-            print("⚠️  Could not fetch embed, posting without")
-    
-    # Detect facets (makes hashtags and URLs clickable)
-    facets = detect_facets(text)
-    
-    # Create post
-    result = create_post(pds, jwt, did, text, facets=facets, embed=embed, allow_repeat=False)
-    
-    if result:
-        print(f"\n✓ Posted successfully!")
-        print(f"  URI: {result.get('uri', '')}")
-        return 0
-    else:
+
+    # We'll try a few times. If anti-repeat triggers, generate a different post.
+    max_attempts = 4
+    attempted_types: list[str] = []
+
+    for attempt in range(1, max_attempts + 1):
+        # Select content type (avoid repeating the same type during retries)
+        content_type = select_content_type()
+        if content_type in attempted_types and len(attempted_types) < 3:
+            # small nudge: re-roll once
+            content_type = select_content_type()
+        attempted_types.append(content_type)
+        print(f"📝 Content type: {content_type} (attempt {attempt}/{max_attempts})")
+
+        # Get source
+        source = get_source_for_type(content_type)
+        print(
+            f"📚 Source: {source['source_type']}" +
+            (f" ({source['topic']})" if source.get('topic') else "")
+        )
+
+        # Generate post
+        print("🤖 Generating post...")
+        post_data = generate_post_with_llm(content_type, source, guidelines)
+
+        if not post_data:
+            print("❌ Failed to generate post")
+            return 1
+
+        text = post_data.get("text", "")
+        embed_url = post_data.get("embed_url")
+        reason = post_data.get("reason", "")
+
+        # Validate
+        if len(text) > 300:
+            print(f"⚠️  Text too long ({len(text)} chars), truncating...")
+            text = text[:297] + "..."
+
+        print(f"\n{'[DRY RUN] ' if dry_run else ''}Post content:")
+        print(f"  Text: {text}")
+        print(f"  Embed: {embed_url or '(none)'}")
+        print(f"  Reason: {reason}")
+        print(f"  Length: {len(text)} chars")
+
+        if dry_run:
+            print("\n✓ Dry run complete")
+            return 0
+
+        # Post
+        print("\n🔗 Connecting to BlueSky...")
+        pds, did, jwt, handle = get_session()
+        print(f"✓ Logged in as @{handle}")
+
+        # Fetch embed if URL provided
+        embed = None
+        if embed_url:
+            print(f"🔗 Fetching embed for {embed_url}...")
+            embed = create_external_embed(pds, jwt, embed_url)
+            if embed:
+                print(f"✓ Embed ready: {embed.get('external', {}).get('title', '')[:50]}")
+            else:
+                print("⚠️  Could not fetch embed, posting without")
+
+        # Detect facets (makes hashtags and URLs clickable)
+        facets = detect_facets(text)
+
+        try:
+            result = create_post(
+                pds,
+                jwt,
+                did,
+                text,
+                facets=facets,
+                embed=embed,
+                allow_repeat=False,
+            )
+        except SystemExit as e:
+            msg = str(e)
+            if "looks too similar" in msg and attempt < max_attempts:
+                print("⚠️  Anti-repeat guard triggered; generating a different post...")
+                continue
+            raise
+
+        if result:
+            print(f"\n✓ Posted successfully!")
+            print(f"  URI: {result.get('uri', '')}")
+            return 0
+
         print("\n❌ Failed to post")
         return 1
+
+    print("\n❌ Exhausted attempts due to anti-repeat guard")
+    return 1
 
 
 def main():
