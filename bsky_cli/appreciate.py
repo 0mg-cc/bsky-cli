@@ -232,8 +232,39 @@ If nothing is worth selecting, return {{"selections": []}}"""
             print(f"LLM error: {r.status_code}")
             return []
         
-        content = r.json()["choices"][0]["message"]["content"]
-        data = json.loads(content)
+        content = r.json()["choices"][0]["message"].get("content")
+
+        def _extract_json_obj(raw: str) -> dict:
+            raw = (raw or "").strip()
+            if not raw:
+                raise ValueError("empty LLM content")
+
+            # Strip common code fences
+            if raw.startswith("```"):
+                # remove leading ```... line
+                raw = raw.split("\n", 1)[1] if "\n" in raw else ""
+                # remove trailing fence
+                raw = raw.rsplit("```", 1)[0]
+                raw = raw.strip()
+
+            # Try direct parse
+            try:
+                return json.loads(raw)
+            except Exception:
+                pass
+
+            # Try to salvage first {...} block
+            i = raw.find("{")
+            j = raw.rfind("}")
+            if i != -1 and j != -1 and j > i:
+                return json.loads(raw[i : j + 1])
+
+            raise ValueError("could not parse JSON from LLM content")
+
+        if isinstance(content, dict):
+            data = content
+        else:
+            data = _extract_json_obj(str(content) if content is not None else "")
         
         selections = []
         for sel in data.get("selections", []):
