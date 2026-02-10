@@ -17,8 +17,7 @@ def test_people_stats_uses_sqlite(monkeypatch, capsys):
 
     conn = _mk_conn()
 
-    monkeypatch.setattr(people, "get_session", lambda: ("https://pds.invalid", "did:me", "jwt", "echo.0mg.cc"))
-    monkeypatch.setattr(people, "open_db", lambda account_handle: conn)
+    monkeypatch.setattr(people, "_open_default_db", lambda: (conn, "echo.0mg.cc"))
 
     people.ensure_schema(conn)
 
@@ -70,8 +69,7 @@ def test_people_can_set_note_and_tags_in_db(monkeypatch, capsys):
 
     conn = _mk_conn()
 
-    monkeypatch.setattr(people, "get_session", lambda: ("https://pds.invalid", "did:me", "jwt", "echo.0mg.cc"))
-    monkeypatch.setattr(people, "open_db", lambda account_handle: conn)
+    monkeypatch.setattr(people, "_open_default_db", lambda: (conn, "echo.0mg.cc"))
 
     people.ensure_schema(conn)
 

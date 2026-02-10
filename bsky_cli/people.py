@@ -12,7 +12,9 @@ import json
 import sqlite3
 from datetime import datetime, timezone
 
-from .auth import get_session, load_from_pass, resolve_handle
+from pathlib import Path
+
+from .auth import load_from_pass, resolve_handle
 from .http import requests
 from .interlocutors import get_friendly_threshold, get_regular_threshold
 from .storage.db import ensure_schema, import_interlocutors_json, open_db
@@ -33,6 +35,41 @@ def _ensure_seeded(conn: sqlite3.Connection) -> None:
     if int(row["n"]) == 0:
         # Anti-regression during migration period.
         import_interlocutors_json(conn, overwrite=False)
+
+
+def _open_default_db() -> tuple[sqlite3.Connection, str]:
+    """Open the per-account DB without requiring a network session.
+
+    This keeps `bsky people --stats` and list mode usable offline.
+    """
+
+    env = load_from_pass() or {}
+    account_handle = (env.get("BSKY_HANDLE") or env.get("BSKY_EMAIL") or "").strip() or "default"
+
+    # Primary path: use the same account keying scheme as the rest of the CLI
+    try:
+        conn = open_db(account_handle)
+        return conn, account_handle
+    except Exception:
+        pass
+
+    # Fallback: if we cannot determine handle (or open_db fails), try to open the only existing DB
+    base = Path.home() / ".bsky-cli" / "accounts"
+    dbs = sorted(base.glob("*/bsky.db"))
+    if len(dbs) == 1:
+        conn = sqlite3.connect(dbs[0])
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL;")
+        conn.execute("PRAGMA foreign_keys=ON;")
+        conn.execute("PRAGMA busy_timeout=5000;")
+        return conn, dbs[0].parent.name
+
+    if len(dbs) > 1:
+        raise SystemExit("Multiple BlueSky accounts found in ~/.bsky-cli/accounts; configure BSKY_HANDLE in pass to select one")
+
+    # No DB on disk yet; create an empty default DB
+    conn = open_db(account_handle)
+    return conn, account_handle
 
 
 def _find_actor_did(conn: sqlite3.Connection, handle_or_did: str, *, pds: str | None = None) -> str | None:
@@ -245,8 +282,9 @@ def _should_skip_enrich(conn: sqlite3.Connection, *, did: str, min_age_hours: in
     if force:
         return False, None
 
+    # Cooldown applies across any snapshot kind (notes/interests/tone).
     row = conn.execute(
-        "SELECT MAX(created_at) AS v FROM actor_auto_notes WHERE did=? AND kind='notes'",
+        "SELECT MAX(created_at) AS v FROM actor_auto_notes WHERE did=?",
         (did,),
     ).fetchone()
     last = (row["v"] if row else None) or None
@@ -266,10 +304,12 @@ def _should_skip_enrich(conn: sqlite3.Connection, *, did: str, min_age_hours: in
 def run(args) -> int:
     """Entry point from CLI."""
 
-    pds, _my_did, _jwt, account_handle = get_session()
-    conn = open_db(account_handle)
+    conn, account_handle = _open_default_db()
     ensure_schema(conn)
     _ensure_seeded(conn)
+
+    env = load_from_pass() or {}
+    pds = (env.get("BSKY_PDS") or "https://bsky.social").rstrip("/")
 
     # --- Stats mode
     if getattr(args, "stats", False):

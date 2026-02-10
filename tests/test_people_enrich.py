@@ -17,6 +17,8 @@ def test_people_enrich_skips_when_recent(monkeypatch, capsys):
     conn = _mk_conn()
     people.ensure_schema(conn)
 
+    monkeypatch.setattr(people, "_open_default_db", lambda: (conn, "echo.0mg.cc"))
+
     conn.execute("INSERT INTO actors(did, handle, display_name) VALUES (?,?,?)", ("did:plc:alice", "alice.bsky.social", "Alice"))
     conn.execute("INSERT INTO dm_conversations(convo_id, last_message_at) VALUES (?,?)", ("c1", "2026-02-10T00:00:00Z"))
     conn.execute("INSERT INTO dm_convo_members(convo_id, did) VALUES (?,?)", ("c1", "did:plc:alice"))
@@ -33,8 +35,7 @@ def test_people_enrich_skips_when_recent(monkeypatch, capsys):
     )
     conn.commit()
 
-    monkeypatch.setattr(people, "get_session", lambda: ("https://pds.invalid", "did:me", "jwt", "echo.0mg.cc"))
-    monkeypatch.setattr(people, "open_db", lambda account_handle: conn)
+    # session/network not required for enrich tests
 
     # Ensure the LLM would blow up if called (so we know skip works)
     monkeypatch.setattr(people, "_llm_enrich_person", lambda **kwargs: (_ for _ in ()).throw(RuntimeError("should not call")))
@@ -66,6 +67,8 @@ def test_people_enrich_min_age_hours_zero_disables_cooldown(monkeypatch, capsys)
     conn = _mk_conn()
     people.ensure_schema(conn)
 
+    monkeypatch.setattr(people, "_open_default_db", lambda: (conn, "echo.0mg.cc"))
+
     conn.execute("INSERT INTO actors(did, handle, display_name) VALUES (?,?,?)", ("did:plc:alice", "alice.bsky.social", "Alice"))
 
     # Pretend enrich was done 1 hour ago
@@ -76,8 +79,7 @@ def test_people_enrich_min_age_hours_zero_disables_cooldown(monkeypatch, capsys)
     )
     conn.commit()
 
-    monkeypatch.setattr(people, "get_session", lambda: ("https://pds.invalid", "did:me", "jwt", "echo.0mg.cc"))
-    monkeypatch.setattr(people, "open_db", lambda account_handle: conn)
+    # session/network not required for enrich tests
 
     called = {"n": 0}
 
@@ -110,11 +112,54 @@ def test_people_enrich_min_age_hours_zero_disables_cooldown(monkeypatch, capsys)
     assert called["n"] == 1
 
 
+def test_people_enrich_cooldown_applies_across_kinds(monkeypatch, capsys):
+    from bsky_cli import people
+
+    conn = _mk_conn()
+    people.ensure_schema(conn)
+
+    monkeypatch.setattr(people, "_open_default_db", lambda: (conn, "echo.0mg.cc"))
+
+    conn.execute("INSERT INTO actors(did, handle, display_name) VALUES (?,?,?)", ("did:plc:alice", "alice.bsky.social", "Alice"))
+
+    # Pretend last snapshot was interests-only, 1 hour ago
+    recent = (datetime.now(timezone.utc) - timedelta(hours=1)).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    conn.execute(
+        "INSERT INTO actor_auto_notes(did, kind, content, created_at) VALUES (?,?,?,?)",
+        ("did:plc:alice", "interests", "ai", recent),
+    )
+    conn.commit()
+
+    monkeypatch.setattr(people, "_llm_enrich_person", lambda **kwargs: (_ for _ in ()).throw(RuntimeError("should not call")))
+
+    args = SimpleNamespace(
+        stats=False,
+        handle="@alice.bsky.social",
+        regulars=False,
+        limit=20,
+        set_note=None,
+        add_tag=None,
+        remove_tag=None,
+        enrich=True,
+        execute=False,
+        force=False,
+        min_age_hours=72,
+    )
+
+    rc = people.run(args)
+    assert rc == 0
+
+    out = capsys.readouterr().out
+    assert "enrich skipped" in out
+
+
 def test_people_enrich_execute_saves_snapshots(monkeypatch, capsys):
     from bsky_cli import people
 
     conn = _mk_conn()
     people.ensure_schema(conn)
+
+    monkeypatch.setattr(people, "_open_default_db", lambda: (conn, "echo.0mg.cc"))
 
     conn.execute("INSERT INTO actors(did, handle, display_name) VALUES (?,?,?)", ("did:plc:alice", "alice.bsky.social", "Alice"))
     conn.execute("INSERT INTO dm_conversations(convo_id, last_message_at) VALUES (?,?)", ("c1", "2026-02-10T00:00:00Z"))
@@ -129,8 +174,7 @@ def test_people_enrich_execute_saves_snapshots(monkeypatch, capsys):
     )
     conn.commit()
 
-    monkeypatch.setattr(people, "get_session", lambda: ("https://pds.invalid", "did:me", "jwt", "echo.0mg.cc"))
-    monkeypatch.setattr(people, "open_db", lambda account_handle: conn)
+    # session/network not required for enrich tests
 
     monkeypatch.setattr(
         people,

@@ -35,8 +35,7 @@ def test_people_last_activity_uses_newest_of_dm_and_interactions(monkeypatch, ca
     )
     conn.commit()
 
-    monkeypatch.setattr(people, "get_session", lambda: ("https://pds.invalid", "did:me", "jwt", "echo.0mg.cc"))
-    monkeypatch.setattr(people, "open_db", lambda account_handle: conn)
+    monkeypatch.setattr(people, "_open_default_db", lambda: (conn, "echo.0mg.cc"))
 
     args = SimpleNamespace(
         stats=False,
