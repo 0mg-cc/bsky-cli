@@ -255,8 +255,8 @@ def import_interlocutors_json(conn: sqlite3.Connection, *, overwrite: bool = Fal
         if existing and not overwrite:
             # keep manual notes/tags as-is; update basic fields + counts, and append interactions if new
             conn.execute(
-                "UPDATE actors SET handle=COALESCE(?, handle), display_name=COALESCE(?, display_name), first_seen=COALESCE(NULLIF(?,''), first_seen), last_interaction=COALESCE(NULLIF(?,''), last_interaction), total_count=MAX(total_count, ?) WHERE did=?",
-                (handle, display_name, first_seen, last_interaction, total_count, did),
+                "UPDATE actors SET handle=COALESCE(NULLIF(?,''), handle), display_name=COALESCE(NULLIF(?,''), display_name), first_seen=COALESCE(NULLIF(?,''), first_seen), last_interaction=COALESCE(NULLIF(?,''), last_interaction), total_count=MAX(total_count, ?) WHERE did=?",
+                (handle or "", display_name or "", first_seen, last_interaction, total_count, did),
             )
         else:
             conn.execute(

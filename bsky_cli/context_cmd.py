@@ -167,15 +167,19 @@ def _fetch_dm_context_from_db(conn, *, my_did: str, target_did: str, limit: int)
 
 
 def _fetch_dm_context(pds: str, jwt: str, account_handle: str, target_handle: str, limit: int) -> list[dict]:
-    target_handle = (target_handle or "").lstrip("@").lower()
+    target_handle = (target_handle or "").strip().lstrip("@").lower()
     if not target_handle:
         return []
+
+    target_is_did = target_handle.startswith("did:")
 
     convos = get_dm_conversations(pds, jwt, limit=50)
     convo = None
     for c in convos:
         for m in c.get("members", []) or []:
-            if (m.get("handle") or "").lower() == target_handle:
+            m_handle = (m.get("handle") or "").lower()
+            m_did = (m.get("did") or "").lower()
+            if (target_is_did and m_did == target_handle) or (not target_is_did and m_handle == target_handle):
                 convo = c
                 break
         if convo:
