@@ -32,14 +32,19 @@ def _fts_escape_query(q: str) -> str:
     if not q:
         return ""
 
-    out: list[str] = []
-    for tok in q.split():
-        if len(tok) >= 2 and tok[0] == '"' and tok[-1] == '"':
-            out.append(tok)
-            continue
+    import shlex
 
-        # Quote tokens with punctuation/symbols to force literal match.
-        if any((not c.isalnum()) and c != "_" for c in tok):
+    try:
+        tokens = shlex.split(q)
+    except ValueError:
+        # Fallback if user has unmatched quotes
+        tokens = q.split()
+
+    out: list[str] = []
+    for tok in tokens:
+        # Quote tokens with punctuation/symbols (including ':' '/' '.' '@') OR spaces
+        # to force literal/phrase match.
+        if (" " in tok) or any((not c.isalnum()) and c != "_" for c in tok):
             tok = tok.replace('"', '""')
             out.append(f'"{tok}"')
         else:
