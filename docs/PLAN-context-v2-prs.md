@@ -40,6 +40,14 @@ Règles :
 
 ---
 
+## Hotfix — DM newlines normalization
+- [x] Normaliser par défaut les sauts de ligne en DM (join avec " — ")
+- [x] Option `--raw` pour envoyer tel quel
+
+**PR GitHub** : https://github.com/echo931/bsky-cli/pull/7
+
+---
+
 ## PR-004 — Threads index DB + extraits fiables focus-aware par défaut
 - [ ] Index 10 threads “shared” depuis DB (source de vérité)
 - [ ] Extraits fiables : root + path + branches + last us/them
