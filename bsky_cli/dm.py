@@ -100,14 +100,14 @@ def check_new_dms(pds: str, jwt: str, *, my_did: str | None = None) -> list[dict
                 
             sender = msg.get("sender", {})
 
+            # Track newest (advance cursor even if the newest message is ours)
+            if sent_at > newest_ts:
+                newest_ts = sent_at
+
             # Skip if it's from us (optional)
             if my_did and sender.get("did") == my_did:
                 continue
 
-            # Track newest
-            if sent_at > newest_ts:
-                newest_ts = sent_at
-                
             new_messages.append({
                 "convo_id": convo["id"],
                 "members": members,
