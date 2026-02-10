@@ -328,7 +328,10 @@ def run(args) -> int:
     # incomplete, fall back to the live API for a complete recent window.
     dm_msgs = dm_msgs_db
     if not dm_msgs_db or len(dm_msgs_db) < dm_limit:
-        dm_msgs_live = _fetch_dm_context(pds, jwt, account_handle, handle, dm_limit)
+        try:
+            dm_msgs_live = _fetch_dm_context(pds, jwt, account_handle, handle, dm_limit)
+        except Exception:
+            dm_msgs_live = []
         if dm_msgs_live:
             dm_msgs = dm_msgs_live
 
