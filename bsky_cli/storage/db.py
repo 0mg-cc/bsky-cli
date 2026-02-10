@@ -111,6 +111,29 @@ MIGRATIONS: list[str] = [
     CREATE INDEX IF NOT EXISTS idx_dm_messages_convo_time ON dm_messages(convo_id, sent_at);
     CREATE INDEX IF NOT EXISTS idx_dm_members_did ON dm_convo_members(did);
     """,
+
+    # 3 — Thread index
+    """
+    CREATE TABLE IF NOT EXISTS threads (
+      root_uri TEXT PRIMARY KEY,
+      last_seen_at TEXT NOT NULL,
+      root_text_cache TEXT NOT NULL DEFAULT ''
+    );
+
+    CREATE TABLE IF NOT EXISTS thread_actor_state (
+      root_uri TEXT NOT NULL,
+      actor_did TEXT NOT NULL,
+      last_interaction_at TEXT NOT NULL,
+      last_post_uri TEXT,
+      last_us TEXT NOT NULL DEFAULT '',
+      last_them TEXT NOT NULL DEFAULT '',
+      PRIMARY KEY (root_uri, actor_did),
+      FOREIGN KEY (root_uri) REFERENCES threads(root_uri) ON DELETE CASCADE,
+      FOREIGN KEY (actor_did) REFERENCES actors(did) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_thread_actor_recent ON thread_actor_state(actor_did, last_interaction_at);
+    """,
 ]
 
 
@@ -208,6 +231,54 @@ def ingest_new_dms(conn: sqlite3.Connection, new_dms: list[dict], *, my_did: str
             inserted += cur.rowcount
 
     return inserted
+
+
+# -----------------------------------------------------------------------------
+# Threads (index)
+# -----------------------------------------------------------------------------
+
+
+def upsert_thread_actor_state(
+    conn: sqlite3.Connection,
+    *,
+    root_uri: str,
+    actor_did: str,
+    last_interaction_at: str,
+    last_post_uri: str | None,
+    last_us: str,
+    last_them: str,
+) -> None:
+    with conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO threads(root_uri, last_seen_at) VALUES (?,?)",
+            (root_uri, last_interaction_at),
+        )
+        conn.execute(
+            "UPDATE threads SET last_seen_at=MAX(last_seen_at, ?) WHERE root_uri=?",
+            (last_interaction_at, root_uri),
+        )
+        conn.execute(
+            "INSERT INTO thread_actor_state(root_uri, actor_did, last_interaction_at, last_post_uri, last_us, last_them) "
+            "VALUES (?,?,?,?,?,?) "
+            "ON CONFLICT(root_uri, actor_did) DO UPDATE SET "
+            "last_interaction_at=MAX(thread_actor_state.last_interaction_at, excluded.last_interaction_at), "
+            "last_post_uri=CASE "
+            "  WHEN excluded.last_interaction_at >= thread_actor_state.last_interaction_at "
+            "  THEN COALESCE(excluded.last_post_uri, thread_actor_state.last_post_uri) "
+            "  ELSE thread_actor_state.last_post_uri "
+            "END, "
+            "last_us=CASE "
+            "  WHEN thread_actor_state.last_us='' AND excluded.last_us!='' THEN excluded.last_us "
+            "  WHEN excluded.last_interaction_at >= thread_actor_state.last_interaction_at AND excluded.last_us!='' THEN excluded.last_us "
+            "  ELSE thread_actor_state.last_us "
+            "END, "
+            "last_them=CASE "
+            "  WHEN thread_actor_state.last_them='' AND excluded.last_them!='' THEN excluded.last_them "
+            "  WHEN excluded.last_interaction_at >= thread_actor_state.last_interaction_at AND excluded.last_them!='' THEN excluded.last_them "
+            "  ELSE thread_actor_state.last_them "
+            "END",
+            (root_uri, actor_did, last_interaction_at, last_post_uri, last_us, last_them),
+        )
 
 
 # -----------------------------------------------------------------------------

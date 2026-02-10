@@ -18,6 +18,7 @@ from .auth import get_session, resolve_handle
 from .http import requests
 from .dm import get_dm_conversations, get_dm_messages
 from .storage import open_db, ensure_schema, import_interlocutors_json
+from .storage.db import upsert_thread_actor_state
 from .threads_mod.utils import uri_to_url
 from .threads_mod.api import get_thread as _api_get_thread
 
@@ -339,18 +340,15 @@ def run(args) -> int:
         if dm_msgs_live:
             dm_msgs = dm_msgs_live
 
-    # COLD: infer last shared threads from interactions
+    # COLD: thread index (DB as source of truth, best-effort refresh from interactions)
     inter_rows = conn.execute(
-        "SELECT date, type, post_uri, our_text, their_text FROM interactions WHERE actor_did=? AND post_uri IS NOT NULL ORDER BY date DESC, id DESC LIMIT 200",
+        "SELECT date, post_uri, our_text, their_text FROM interactions "
+        "WHERE actor_did=? AND post_uri IS NOT NULL "
+        "ORDER BY date DESC, id DESC LIMIT 200",
         (target_did,),
     ).fetchall()
 
-    # Group by root_uri
-    threads: list[dict] = []
-    seen_roots: set[str] = set()
-
-    # Pre-load interactions by root
-    grouped: dict[str, list[dict]] = defaultdict(list)
+    # Refresh thread_actor_state from recent interactions (best-effort)
     for r in inter_rows:
         post_uri = r["post_uri"]
         if not post_uri:
@@ -358,80 +356,115 @@ def run(args) -> int:
         try:
             root_uri = _get_root_uri_for_post_uri(pds, jwt, post_uri)
         except Exception:
-            root_uri = post_uri
-        grouped[root_uri].append({
-            "date": r["date"],
-            "our_text": r["our_text"] or "",
-            "their_text": r["their_text"] or "",
-        })
+            # Don't persist unresolved roots; a transient failure would otherwise corrupt the
+            # persistent index with per-post "roots".
+            continue
 
-    # If focus is provided, build one focus-aware thread excerpt first.
+        upsert_thread_actor_state(
+            conn,
+            root_uri=root_uri,
+            actor_did=target_did,
+            last_interaction_at=r["date"],
+            last_post_uri=post_uri,
+            last_us=r["our_text"] or "",
+            last_them=r["their_text"] or "",
+        )
+
+    # Pull last shared threads from index
+    state_rows = conn.execute(
+        "SELECT root_uri, last_post_uri, last_us, last_them, last_interaction_at "
+        "FROM thread_actor_state WHERE actor_did=? "
+        "ORDER BY last_interaction_at DESC LIMIT ?",
+        (target_did, threads_limit),
+    ).fetchall()
+
+    threads: list[dict] = []
+
+    # Decide focus: explicit, else fallback to most recent thread position
+    focus_uri = ""
     if focus:
         focus_uri = _resolve_focus_uri(pds, jwt, str(focus))
-        thread_node = _get_post_thread(pds, jwt, focus_uri, depth=8)
+    elif state_rows:
+        focus_uri = state_rows[0]["last_post_uri"] or ""
+
+    focus_root_uri = ""
+    focus_pack: dict | None = None
+    if focus_uri:
+        try:
+            thread_node = _get_post_thread(pds, jwt, focus_uri, depth=8)
+        except Exception:
+            thread_node = None
         if thread_node:
             path = _extract_context_path(thread_node)
             branches = _extract_branching_answers(thread_node, limit=5)
-            root_uri = (path[0].get("uri") if path else "") or focus_uri
-            seen_roots.add(root_uri)
+            focus_root_uri = (path[0].get("uri") if path else "") or focus_uri
+            focus_pack = {
+                "focus_uri": focus_uri,
+                "focus_url": uri_to_url(focus_uri),
+                "context_path": path,
+                "branching_answers": branches,
+                "root_text": (path[0].get("text") if path else "") or "",
+            }
 
-            items = grouped.get(root_uri, [])
-            last_us = ""
-            last_them = ""
-            for it in items:
-                if it.get("our_text") and not last_us:
-                    last_us = it["our_text"]
-                if it.get("their_text") and not last_them:
-                    last_them = it["their_text"]
-                if last_us and last_them:
-                    break
+    state_roots = [r["root_uri"] for r in state_rows]
 
-            root_text = (path[0].get("text") if path else "") or ""
-
-            threads.append(
-                {
-                    "root_uri": root_uri,
-                    "url": uri_to_url(root_uri),
-                    "root_text": root_text,
-                    "focus_uri": focus_uri,
-                    "focus_url": uri_to_url(focus_uri),
-                    "context_path": path,
-                    "branching_answers": branches,
-                    "last_us": last_us,
-                    "last_them": last_them,
-                }
-            )
-
-    for root_uri, items in grouped.items():
-        if root_uri in seen_roots:
-            continue
-        seen_roots.add(root_uri)
-
-        # Determine last us/them from stored snippets
-        last_us = ""
-        last_them = ""
-        for it in items:
-            if it.get("our_text") and not last_us:
-                last_us = it["our_text"]
-            if it.get("their_text") and not last_them:
-                last_them = it["their_text"]
-            if last_us and last_them:
-                break
-
-        try:
-            root_text = _get_post_text(pds, jwt, root_uri)
-        except Exception:
-            root_text = ""
+    # Ensure an explicit --focus always shows up, even if its root thread isn't indexed
+    # in the top-N rows (or if no rows exist yet).
+    if focus_pack and focus_root_uri and focus_root_uri not in state_roots:
+        # Best-effort last us/them if we already have state for this root
+        r2 = conn.execute(
+            "SELECT last_us, last_them FROM thread_actor_state WHERE root_uri=? AND actor_did=?",
+            (focus_root_uri, target_did),
+        ).fetchone()
 
         threads.append(
             {
-                "root_uri": root_uri,
-                "url": uri_to_url(root_uri),
-                "root_text": root_text,
-                "last_us": last_us,
-                "last_them": last_them,
+                "root_uri": focus_root_uri,
+                "url": uri_to_url(focus_root_uri),
+                "root_text": focus_pack.get("root_text") or "",
+                "focus_uri": focus_pack.get("focus_uri"),
+                "focus_url": focus_pack.get("focus_url"),
+                "context_path": focus_pack.get("context_path"),
+                "branching_answers": focus_pack.get("branching_answers"),
+                "last_us": (r2["last_us"] if r2 else "") or "",
+                "last_them": (r2["last_them"] if r2 else "") or "",
             }
         )
+
+    # Add remaining indexed threads (most recent first), skipping the focus root if we already added it
+    for r in state_rows:
+        root_uri = r["root_uri"]
+        if focus_root_uri and root_uri == focus_root_uri and any(t.get("root_uri") == focus_root_uri for t in threads):
+            continue
+
+        root_text = ""
+        if focus_pack and root_uri == focus_root_uri and focus_pack.get("root_text"):
+            root_text = focus_pack["root_text"]
+        else:
+            try:
+                root_text = _get_post_text(pds, jwt, root_uri)
+            except Exception:
+                root_text = ""
+
+        t = {
+            "root_uri": root_uri,
+            "url": uri_to_url(root_uri),
+            "root_text": root_text,
+            "last_us": r["last_us"] or "",
+            "last_them": r["last_them"] or "",
+        }
+
+        if focus_pack and root_uri == focus_root_uri:
+            t.update(
+                {
+                    "focus_uri": focus_pack.get("focus_uri"),
+                    "focus_url": focus_pack.get("focus_url"),
+                    "context_path": focus_pack.get("context_path"),
+                    "branching_answers": focus_pack.get("branching_answers"),
+                }
+            )
+
+        threads.append(t)
 
         if len(threads) >= threads_limit:
             break
