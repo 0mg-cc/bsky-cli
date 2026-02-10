@@ -18,7 +18,7 @@ Règles :
 - [x] `bsky context --focus` : focus + path + branching answers
 - [x] Tests smoke + doc `--help`
 
-**PR GitHub** : https://github.com/echo931/bsky-cli/pull/3
+**PR GitHub** : https://github.com/echo931/bsky-cli/pull/3 (**MERGED**)
 
 ---
 
