@@ -76,6 +76,11 @@ def detect_facets(text: str, *, pds: str | None = None) -> list[dict] | None:
                 full = match.group(1)
                 handle = match.group(2)
 
+                # Allow punctuation after mentions in prose (e.g. "hi @alice.bsky.social.")
+                # We keep facet offsets spanning only the handle itself.
+                handle = handle.rstrip(".,;:!?)\"]}\"")
+                full = "@" + handle
+
                 try:
                     did = resolve_handle(pds, handle)
                 except Exception:

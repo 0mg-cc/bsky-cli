@@ -326,9 +326,18 @@ def run(args) -> int:
     tags = [r["tag"] for r in conn.execute("SELECT tag FROM actor_tags WHERE did=? ORDER BY tag", (target_did,))]
 
     # HOT: recent DMs (DB-first, live fallback)
-    dm_msgs = _fetch_dm_context_from_db(conn, my_did=my_did, target_did=target_did, limit=dm_limit)
-    if not dm_msgs:
-        dm_msgs = _fetch_dm_context(pds, jwt, account_handle, handle, dm_limit)
+    dm_msgs_db = _fetch_dm_context_from_db(conn, my_did=my_did, target_did=target_did, limit=dm_limit)
+
+    # The DB cache can be partial (e.g. only new/unread inbound messages ingested). If it looks
+    # incomplete, fall back to the live API for a complete recent window.
+    dm_msgs = dm_msgs_db
+    if not dm_msgs_db or len(dm_msgs_db) < dm_limit:
+        try:
+            dm_msgs_live = _fetch_dm_context(pds, jwt, account_handle, handle, dm_limit)
+        except Exception:
+            dm_msgs_live = []
+        if dm_msgs_live:
+            dm_msgs = dm_msgs_live
 
     # COLD: infer last shared threads from interactions
     inter_rows = conn.execute(
