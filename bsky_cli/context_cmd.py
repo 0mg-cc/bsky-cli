@@ -343,7 +343,9 @@ def run(args) -> int:
         try:
             root_uri = _get_root_uri_for_post_uri(pds, jwt, post_uri)
         except Exception:
-            root_uri = post_uri
+            # Don't persist unresolved roots; a transient failure would otherwise corrupt the
+            # persistent index with per-post "roots".
+            continue
 
         upsert_thread_actor_state(
             conn,

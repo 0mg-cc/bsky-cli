@@ -268,13 +268,13 @@ def upsert_thread_actor_state(
             "  ELSE thread_actor_state.last_post_uri "
             "END, "
             "last_us=CASE "
-            "  WHEN excluded.last_interaction_at >= thread_actor_state.last_interaction_at AND excluded.last_us!='' "
-            "  THEN excluded.last_us "
+            "  WHEN thread_actor_state.last_us='' AND excluded.last_us!='' THEN excluded.last_us "
+            "  WHEN excluded.last_interaction_at >= thread_actor_state.last_interaction_at AND excluded.last_us!='' THEN excluded.last_us "
             "  ELSE thread_actor_state.last_us "
             "END, "
             "last_them=CASE "
-            "  WHEN excluded.last_interaction_at >= thread_actor_state.last_interaction_at AND excluded.last_them!='' "
-            "  THEN excluded.last_them "
+            "  WHEN thread_actor_state.last_them='' AND excluded.last_them!='' THEN excluded.last_them "
+            "  WHEN excluded.last_interaction_at >= thread_actor_state.last_interaction_at AND excluded.last_them!='' THEN excluded.last_them "
             "  ELSE thread_actor_state.last_them "
             "END",
             (root_uri, actor_did, last_interaction_at, last_post_uri, last_us, last_them),
