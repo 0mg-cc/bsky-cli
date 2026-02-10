@@ -58,10 +58,10 @@ Règles :
 ---
 
 ## PR-005 — FTS5 + `bsky search-history`
-- [ ] FTS5 sur DMs + threads/posts
-- [ ] `bsky search-history "term" --handle ... --source dm|threads|all --since/--until`
+- [x] FTS5 sur DMs + threads/interactions
+- [x] `bsky search-history <handle|did> <query> --scope dm|threads|all --since/--until`
 
-**PR GitHub** : https://github.com/echo931/bsky-cli/pull/11 (**OPEN**)
+**PR GitHub** : https://github.com/echo931/bsky-cli/pull/11 (**MERGED**)
 
 ---
 
