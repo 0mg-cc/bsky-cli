@@ -7,6 +7,7 @@ from pathlib import Path
 from .http import requests
 
 from .auth import get_session
+from .post import detect_facets
 
 CHAT_PROXY_DID = "did:web:api.bsky.chat"
 DM_STATE_FILE = Path("/home/echo/.local/state/bsky_dm_last_seen.txt")
@@ -51,7 +52,7 @@ def save_dm_last_seen(timestamp: str) -> None:
     DM_STATE_FILE.write_text(timestamp)
 
 
-def check_new_dms(pds: str, jwt: str) -> list[dict]:
+def check_new_dms(pds: str, jwt: str, *, my_did: str | None = None) -> list[dict]:
     """Check for new DMs since last check.
     
     Returns a list of new messages with conversation context.
@@ -89,9 +90,12 @@ def check_new_dms(pds: str, jwt: str) -> list[dict]:
             if last_seen and sent_at <= last_seen:
                 continue
                 
-            # Skip if it's from us
             sender = msg.get("sender", {})
-            
+
+            # Skip if it's from us (optional)
+            if my_did and sender.get("did") == my_did:
+                continue
+
             # Track newest
             if sent_at > newest_ts:
                 newest_ts = sent_at
@@ -99,8 +103,10 @@ def check_new_dms(pds: str, jwt: str) -> list[dict]:
             new_messages.append({
                 "convo_id": convo["id"],
                 "members": members,
+                "message_id": msg.get("id") or "",
                 "sender": sender,
                 "text": msg.get("text", ""),
+                "facets": msg.get("facets"),
                 "sent_at": sent_at,
             })
     
@@ -149,11 +155,14 @@ def send_dm(pds: str, jwt: str, convo_id: str, text: str) -> dict:
         "Content-Type": "application/json",
         "atproto-proxy": f"{CHAT_PROXY_DID}#bsky_chat",
     }
+    msg = {"text": text}
+    facets = detect_facets(text, pds=pds)
+    if facets:
+        msg["facets"] = facets
+
     payload = {
         "convoId": convo_id,
-        "message": {
-            "text": text
-        }
+        "message": msg,
     }
     r = requests.post(url, headers=headers, json=payload, timeout=20)
     r.raise_for_status()

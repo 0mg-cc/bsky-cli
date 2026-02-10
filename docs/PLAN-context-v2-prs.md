@@ -18,14 +18,16 @@ Règles :
 - [x] `bsky context --focus` : focus + path + branching answers
 - [x] Tests smoke + doc `--help`
 
-**PR GitHub** : https://github.com/echo931/bsky-cli/pull/3
+**PR GitHub** : https://github.com/echo931/bsky-cli/pull/3 (**MERGED**)
 
 ---
 
 ## PR-002 — DM facets + DM poll correctness (skip self)
-- [ ] DMs sortants : facets (URLs/@/#)
-- [ ] DM poll : ignorer nos propres messages
-- [ ] Tests
+- [x] DMs sortants : facets (URLs/@/#)
+- [x] DM poll : ignorer nos propres messages
+- [x] Tests
+
+**PR GitHub** : https://github.com/echo931/bsky-cli/pull/4
 
 ---
 
