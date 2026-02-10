@@ -44,7 +44,7 @@ Règles :
 - [x] Normaliser par défaut les sauts de ligne en DM (join avec " — ")
 - [x] Option `--raw` pour envoyer tel quel
 
-**PR GitHub** : https://github.com/echo931/bsky-cli/pull/7
+**PR GitHub** : https://github.com/echo931/bsky-cli/pull/7 (**MERGED**)
 
 ---
 
