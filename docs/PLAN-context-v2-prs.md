@@ -32,9 +32,11 @@ Règles :
 ---
 
 ## PR-003 — Ingestion DMs → SQLite + DB-first pour HOT context
-- [ ] Tables DM + ingestion idempotente (convo_id,msg_id)
-- [ ] `bsky notify` / poller : ingest then decide output
-- [ ] `bsky context` : HOT depuis DB, fallback live
+- [x] Tables DM + ingestion idempotente (convo_id,msg_id)
+- [x] `bsky notify` : ingest best-effort (poller “ingest then decide” sera fait séparément côté scripts)
+- [x] `bsky context` : HOT depuis DB, fallback live
+
+**PR GitHub** : https://github.com/echo931/bsky-cli/pull/5
 
 ---
 
