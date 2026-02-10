@@ -505,6 +505,30 @@ EXAMPLES:
     )
     context_parser.add_argument("--json", action="store_true", help="Output JSON instead of LLM-formatted text")
 
+    # search-history (local SQLite history)
+    sh_parser = subparsers.add_parser(
+        "search-history", help="Search your local interaction history (SQLite/FTS5)",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+EXAMPLES:
+  bsky search-history penny.hailey.at "timestamps"
+  bsky search-history @jenrm.bsky.social "cyberpunk" --scope threads
+  bsky search-history penny.hailey.at "hello" --scope dm --json
+
+SCOPES:
+  dm       - DMs only
+  threads  - thread interactions only
+  all      - both
+"""
+    )
+    sh_parser.add_argument("handle", help="Target handle (or DID)")
+    sh_parser.add_argument("query", help="FTS query string")
+    sh_parser.add_argument("--scope", choices=["all", "dm", "threads"], default="all", help="Which sources to search (default: all)")
+    sh_parser.add_argument("--since", help="Only results at/after this timestamp/date (string compare)")
+    sh_parser.add_argument("--until", help="Only results at/before this timestamp/date (string compare)")
+    sh_parser.add_argument("--limit", type=int, default=25, help="Max results (default: 25)")
+    sh_parser.add_argument("--json", action="store_true", help="Output JSON")
+
     # organic
     organic_parser = subparsers.add_parser(
         "organic", help="Organic posting (replaces 29 bsky-post crons)",
@@ -603,6 +627,8 @@ Edit the config file to customize behavior.
         from .people import run
     elif args.command == "context":
         from .context_cmd import run
+    elif args.command == "search-history":
+        from .search_history_cmd import run
     elif args.command == "organic":
         from .organic import run
     elif args.command == "config":
