@@ -237,8 +237,27 @@ bsky profile --name "Echo 🤖"
 # Send a DM
 bsky dm @user.bsky.social "Hello!"
 
-# Check DM conversations
-bsky dm --list
+# List DM conversations (inbox)
+bsky dms --preview 1
+
+# Show conversation with a specific handle
+bsky dms show user.bsky.social --limit 50
+```
+
+### Context Packs (HOT vs COLD)
+
+```bash
+# Build a prompt-ready context pack for a handle
+bsky context penny.hailey.at
+
+# More DM / more threads
+bsky context @jenrm.bsky.social --dm 20 --threads 10
+
+# JSON output (for piping into other tools)
+bsky context penny.hailey.at --json
+
+# Focus a specific post to get a reliable context path + branching replies
+bsky context penny.hailey.at --focus "https://bsky.app/profile/user/post/abc123"
 ```
 
 ### Interlocutor Tracking
@@ -260,7 +279,8 @@ bsky people --stats
 The interlocutor system tracks who you've interacted with and enriches engagement:
 - Notifications show 🔄 for regulars, 🆕 for first contacts
 - LLM prompts include relationship context (avoid repetition, adapt tone)
-- History stored in `~/.bsky-cli/interlocutors.json`
+- History stored in `~/.bsky-cli/interlocutors.json` (legacy)
+- New context/memory DB stored per account at `~/.bsky-cli/accounts/<account>/bsky.db`
 
 ### Cleanup
 
@@ -292,7 +312,10 @@ bsky_cli/
 ├── notify.py         # Notifications (with relationship badges)
 ├── follow.py         # Follow/unfollow
 ├── profile.py        # Profile updates
-├── dm.py             # Direct messages
+├── dm.py             # Direct messages (send)
+├── dms_cmd.py        # DM inbox/conversation viewer
+├── context_cmd.py    # HOT/COLD context pack builder
+├── storage/          # SQLite storage (per-account)
 ├── announce.py       # Blog post announcements
 └── delete.py         # Post deletion
 ```
@@ -304,6 +327,7 @@ The CLI stores state in your home directory:
 - `~/.bsky-cli/state.json` — Replied posts, daily limits
 - `~/.bsky-cli/conversations.json` — Conversation tracking
 - `~/.bsky-cli/discover_state.json` — Discovery history
+- `~/.bsky-cli/accounts/<account>/bsky.db` — Context/memory SQLite (per-account)
 - Thread state location is configurable (default: `~/personas/echo/data/bsky-threads-state.json`)
 
 ## Use with Cron/Automation

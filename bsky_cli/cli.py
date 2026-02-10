@@ -42,6 +42,10 @@ EXAMPLES:
   Notifications & DMs:
     bsky notify --all
     bsky dm user.bsky.social "Hello!"
+    bsky dms --preview 1
+
+  Context packs (for LLM prompts):
+    bsky context user.bsky.social
 
   Engagement (LLM-powered):
     bsky engage --dry-run
@@ -476,6 +480,26 @@ BADGES IN NOTIFICATIONS:
     people_parser.add_argument("--stats", action="store_true", help="Show statistics")
     people_parser.add_argument("--limit", type=int, default=20, help="Max users to show (default: 20)")
 
+    # context (memory pack)
+    context_parser = subparsers.add_parser(
+        "context", help="Build a HOT/COLD context pack for a handle",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+EXAMPLES:
+  bsky context penny.hailey.at
+  bsky context @jenrm.bsky.social --dm 20 --threads 10
+  bsky context penny.hailey.at --json
+"""
+    )
+    context_parser.add_argument("handle", help="Target handle (or DID)")
+    context_parser.add_argument("--dm", type=int, default=10, help="Recent DM messages to include (default: 10)")
+    context_parser.add_argument("--threads", type=int, default=10, help="Shared threads to include (default: 10)")
+    context_parser.add_argument(
+        "--focus",
+        help="Focus post (at:// URI or https://bsky.app/profile/.../post/...) to extract path + branching replies",
+    )
+    context_parser.add_argument("--json", action="store_true", help="Output JSON instead of LLM-formatted text")
+
     # organic
     organic_parser = subparsers.add_parser(
         "organic", help="Organic posting (replaces 29 bsky-post crons)",
@@ -572,6 +596,8 @@ Edit the config file to customize behavior.
         from .threads import run
     elif args.command == "people":
         from .people import run
+    elif args.command == "context":
+        from .context_cmd import run
     elif args.command == "organic":
         from .organic import run
     elif args.command == "config":
