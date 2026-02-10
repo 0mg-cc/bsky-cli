@@ -27,7 +27,7 @@ Règles :
 - [x] DM poll : ignorer nos propres messages
 - [x] Tests
 
-**PR GitHub** : https://github.com/echo931/bsky-cli/pull/4
+**PR GitHub** : https://github.com/echo931/bsky-cli/pull/4 (**MERGED**)
 
 ---
 
