@@ -41,9 +41,11 @@ Règles :
 ---
 
 ## PR-004 — Threads index DB + extraits fiables focus-aware par défaut
-- [ ] Index 10 threads “shared” depuis DB (source de vérité)
-- [ ] Extraits fiables : root + path + branches + last us/them
-- [ ] Fallback focus robuste (dernier post d’interaction)
+- [x] Index 10 threads “shared” depuis DB (source de vérité)
+- [x] Extraits fiables : root + path + branches + last us/them (sur le thread le plus récent via fallback)
+- [x] Fallback focus robuste (dernier post d’interaction)
+
+**PR GitHub** : https://github.com/echo931/bsky-cli/pull/8
 
 ---
 
