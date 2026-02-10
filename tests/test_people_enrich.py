@@ -60,6 +60,56 @@ def test_people_enrich_skips_when_recent(monkeypatch, capsys):
     assert "enrich skipped" in out
 
 
+def test_people_enrich_min_age_hours_zero_disables_cooldown(monkeypatch, capsys):
+    from bsky_cli import people
+
+    conn = _mk_conn()
+    people.ensure_schema(conn)
+
+    conn.execute("INSERT INTO actors(did, handle, display_name) VALUES (?,?,?)", ("did:plc:alice", "alice.bsky.social", "Alice"))
+
+    # Pretend enrich was done 1 hour ago
+    recent = (datetime.now(timezone.utc) - timedelta(hours=1)).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    conn.execute(
+        "INSERT INTO actor_auto_notes(did, kind, content, created_at) VALUES (?,?,?,?)",
+        ("did:plc:alice", "notes", "old", recent),
+    )
+    conn.commit()
+
+    monkeypatch.setattr(people, "get_session", lambda: ("https://pds.invalid", "did:me", "jwt", "echo.0mg.cc"))
+    monkeypatch.setattr(people, "open_db", lambda account_handle: conn)
+
+    called = {"n": 0}
+
+    def _fake_llm(**kwargs):
+        called["n"] += 1
+        return {"notes_auto": "auto notes", "interests_auto": "ai", "relationship_tone": "friendly"}
+
+    monkeypatch.setattr(people, "_llm_enrich_person", _fake_llm)
+
+    args = SimpleNamespace(
+        stats=False,
+        handle="@alice.bsky.social",
+        regulars=False,
+        limit=20,
+        set_note=None,
+        add_tag=None,
+        remove_tag=None,
+        enrich=True,
+        execute=False,
+        force=False,
+        min_age_hours=0,
+    )
+
+    rc = people.run(args)
+    assert rc == 0
+
+    out = capsys.readouterr().out
+    assert "enrich skipped" not in out
+    assert "Enrich preview" in out
+    assert called["n"] == 1
+
+
 def test_people_enrich_execute_saves_snapshots(monkeypatch, capsys):
     from bsky_cli import people
 

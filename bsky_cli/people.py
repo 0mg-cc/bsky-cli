@@ -63,13 +63,44 @@ def _find_actor_did(conn: sqlite3.Connection, handle_or_did: str, *, pds: str | 
     return None
 
 
+def _parse_any_ts(s: str) -> datetime | None:
+    s = (s or "").strip()
+    if not s:
+        return None
+
+    # DM timestamps are ISO (usually with Z)
+    if "T" in s:
+        try:
+            return datetime.fromisoformat(s.replace("Z", "+00:00"))
+        except Exception:
+            return None
+
+    # interactions.date is often date-only (YYYY-MM-DD)
+    try:
+        d = datetime.fromisoformat(s)
+        # date-only parses as datetime at midnight (naive) in some py versions;
+        # normalize to UTC-aware.
+        if d.tzinfo is None:
+            d = d.replace(tzinfo=timezone.utc)
+        return d
+    except Exception:
+        return None
+
+
 def _actor_stats(conn: sqlite3.Connection, did: str) -> dict:
     n_inter = int(conn.execute("SELECT COUNT(*) AS n FROM interactions WHERE actor_did=?", (did,)).fetchone()["n"])
     n_dm = int(conn.execute("SELECT COUNT(*) AS n FROM dm_messages WHERE actor_did=?", (did,)).fetchone()["n"])
     last_inter = conn.execute("SELECT MAX(date) AS v FROM interactions WHERE actor_did=?", (did,)).fetchone()["v"] or ""
     last_dm = conn.execute("SELECT MAX(sent_at) AS v FROM dm_messages WHERE actor_did=?", (did,)).fetchone()["v"] or ""
 
-    last = last_dm or last_inter
+    di = _parse_any_ts(str(last_inter))
+    dd = _parse_any_ts(str(last_dm))
+
+    if di and dd:
+        last = last_inter if di >= dd else last_dm
+    else:
+        last = last_dm or last_inter
+
     return {
         "n_interactions": n_inter,
         "n_dms": n_dm,
@@ -325,7 +356,8 @@ def run(args) -> int:
         if getattr(args, "enrich", False):
             execute = bool(getattr(args, "execute", False))
             force = bool(getattr(args, "force", False))
-            min_age_hours = int(getattr(args, "min_age_hours", 72) or 72)
+            mah = getattr(args, "min_age_hours", 72)
+            min_age_hours = 72 if mah is None else int(mah)
 
             skip, last = _should_skip_enrich(conn, did=did, min_age_hours=min_age_hours, force=force)
             if skip:
