@@ -494,6 +494,10 @@ EXAMPLES:
     context_parser.add_argument("handle", help="Target handle (or DID)")
     context_parser.add_argument("--dm", type=int, default=10, help="Recent DM messages to include (default: 10)")
     context_parser.add_argument("--threads", type=int, default=10, help="Shared threads to include (default: 10)")
+    context_parser.add_argument(
+        "--focus",
+        help="Focus post (at:// URI or https://bsky.app/profile/.../post/...) to extract path + branching replies",
+    )
     context_parser.add_argument("--json", action="store_true", help="Output JSON instead of LLM-formatted text")
 
     # organic

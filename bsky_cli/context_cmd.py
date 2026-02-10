@@ -19,6 +19,7 @@ from .http import requests
 from .dm import get_dm_conversations, get_dm_messages
 from .storage import open_db, ensure_schema, import_interlocutors_json
 from .threads_mod.utils import uri_to_url
+from .threads_mod.api import get_thread as _api_get_thread
 
 
 def _parse_at_uri(uri: str) -> tuple[str, str] | None:
@@ -61,6 +62,72 @@ def _get_post_text(pds: str, jwt: str, uri: str) -> str:
     repo, rkey = parsed
     rec = _get_record(pds, jwt, repo, rkey)
     return ((rec.get("value") or {}).get("text") or "").strip()
+
+
+def _resolve_focus_uri(pds: str, jwt: str, focus: str) -> str:
+    """Resolve a focus target (at:// URI or bsky.app URL) to an at:// URI."""
+    focus = (focus or "").strip()
+    if not focus:
+        return ""
+    if focus.startswith("at://"):
+        return focus
+
+    m = re.match(r"^https://bsky\.app/profile/([^/]+)/post/([^/]+)$", focus)
+    if not m:
+        raise SystemExit(f"Invalid focus URL/URI: {focus}")
+
+    actor, rkey = m.group(1), m.group(2)
+    did = actor if actor.startswith("did:") else resolve_handle(pds, actor)
+    return f"at://{did}/app.bsky.feed.post/{rkey}"
+
+
+def _get_post_thread(pds: str, jwt: str, uri: str, depth: int = 10) -> dict | None:
+    return _api_get_thread(pds, jwt, uri, depth=depth)
+
+
+def _node_post_summary(node: dict | None) -> dict:
+    if not node:
+        return {}
+    post = node.get("post") or {}
+    uri = post.get("uri") or ""
+    author = post.get("author") or {}
+    record = post.get("record") or post.get("value") or {}
+    txt = (record.get("text") or "").strip()
+    created_at = record.get("createdAt") or ""
+    return {
+        "uri": uri,
+        "url": uri_to_url(uri) if uri else "",
+        "author": {
+            "handle": author.get("handle") or "",
+            "did": author.get("did") or "",
+            "displayName": author.get("displayName") or "",
+        },
+        "createdAt": created_at,
+        "text": txt,
+    }
+
+
+def _extract_context_path(thread_node: dict) -> list[dict]:
+    """Return root→…→focus path from a getPostThread response."""
+    cur = thread_node
+    rev: list[dict] = []
+    while cur:
+        rev.append(_node_post_summary(cur))
+        cur = cur.get("parent")
+    path = list(reversed([p for p in rev if p.get("uri")]))
+    return path
+
+
+def _extract_branching_answers(thread_node: dict, *, limit: int = 5) -> list[dict]:
+    replies = thread_node.get("replies") or []
+    out: list[dict] = []
+    for r in replies:
+        if not r:
+            continue
+        out.append(_node_post_summary(r))
+        if len(out) >= int(limit):
+            break
+    return out
 
 
 def _fetch_dm_context(pds: str, jwt: str, account_handle: str, target_handle: str, limit: int) -> list[dict]:
@@ -144,6 +211,31 @@ def _format_context_pack(pack: dict) -> str:
             root = (t.get("root_text") or "").replace("\n", " ").strip()
             if root:
                 lines.append(f"  root: {root[:300]}{'…' if len(root) > 300 else ''}")
+
+            # Focus-aware excerpts (when we know the current position in the thread)
+            if t.get("focus_url"):
+                lines.append(f"  focus: {t.get('focus_url')}")
+
+                path = t.get("context_path") or []
+                if path:
+                    lines.append("  path:")
+                    for p in path:
+                        ah = ((p.get("author") or {}).get("handle") or "unknown")
+                        txt = (p.get("text") or "").replace("\n", " ").strip()
+                        if len(txt) > 180:
+                            txt = txt[:180] + "…"
+                        lines.append(f"    - @{ah}: {txt}")
+
+                branches = t.get("branching_answers") or []
+                if branches:
+                    lines.append("  branches:")
+                    for b in branches:
+                        ah = ((b.get("author") or {}).get("handle") or "unknown")
+                        txt = (b.get("text") or "").replace("\n", " ").strip()
+                        if len(txt) > 180:
+                            txt = txt[:180] + "…"
+                        lines.append(f"    - @{ah}: {txt}")
+
             if t.get("last_us"):
                 u = (t["last_us"] or "").replace("\n", " ").strip()
                 lines.append(f"  us:   {u[:260]}{'…' if len(u) > 260 else ''}")
@@ -161,6 +253,7 @@ def run(args) -> int:
 
     dm_limit = int(getattr(args, "dm", 10))
     threads_limit = int(getattr(args, "threads", 10))
+    focus = getattr(args, "focus", None)
 
     pds, my_did, jwt, account_handle = get_session()
 
@@ -220,6 +313,43 @@ def run(args) -> int:
             "our_text": r["our_text"] or "",
             "their_text": r["their_text"] or "",
         })
+
+    # If focus is provided, build one focus-aware thread excerpt first.
+    if focus:
+        focus_uri = _resolve_focus_uri(pds, jwt, str(focus))
+        thread_node = _get_post_thread(pds, jwt, focus_uri, depth=8)
+        if thread_node:
+            path = _extract_context_path(thread_node)
+            branches = _extract_branching_answers(thread_node, limit=5)
+            root_uri = (path[0].get("uri") if path else "") or focus_uri
+            seen_roots.add(root_uri)
+
+            items = grouped.get(root_uri, [])
+            last_us = ""
+            last_them = ""
+            for it in items:
+                if it.get("our_text") and not last_us:
+                    last_us = it["our_text"]
+                if it.get("their_text") and not last_them:
+                    last_them = it["their_text"]
+                if last_us and last_them:
+                    break
+
+            root_text = (path[0].get("text") if path else "") or ""
+
+            threads.append(
+                {
+                    "root_uri": root_uri,
+                    "url": uri_to_url(root_uri),
+                    "root_text": root_text,
+                    "focus_uri": focus_uri,
+                    "focus_url": uri_to_url(focus_uri),
+                    "context_path": path,
+                    "branching_answers": branches,
+                    "last_us": last_us,
+                    "last_them": last_them,
+                }
+            )
 
     for root_uri, items in grouped.items():
         if root_uri in seen_roots:

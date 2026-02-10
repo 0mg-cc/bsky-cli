@@ -99,3 +99,94 @@ def test_context_run_smoke(monkeypatch, capsys):
     assert "[HOT CONTEXT" in out
     assert "hello from dm" in out
     assert "root post text" in out
+
+
+def test_context_run_with_focus_includes_path_and_branches(monkeypatch, capsys):
+    # Patch session
+    monkeypatch.setattr(
+        context_cmd,
+        "get_session",
+        lambda: ("https://pds.invalid", "did:me", "jwt", "echo.0mg.cc"),
+    )
+
+    # Patch DID resolution
+    monkeypatch.setattr(context_cmd, "resolve_handle", lambda pds, h: "did:plc:target")
+
+    # In-memory DB
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    monkeypatch.setattr(context_cmd, "open_db", lambda account_handle: conn)
+
+    monkeypatch.setattr(context_cmd, "import_interlocutors_json", lambda conn: 0)
+
+    context_cmd.ensure_schema(conn)
+    conn.execute(
+        "INSERT INTO actors(did, handle) VALUES (?,?)",
+        ("did:plc:target", "target.example"),
+    )
+    conn.execute(
+        "INSERT INTO interactions(actor_did, date, type, post_uri, our_text, their_text) VALUES (?,?,?,?,?,?)",
+        (
+            "did:plc:target",
+            "2026-02-02",
+            "reply_to_them",
+            "at://did:plc:target/app.bsky.feed.post/abc",
+            "our msg",
+            "their msg",
+        ),
+    )
+    conn.commit()
+
+    monkeypatch.setattr(context_cmd, "_fetch_dm_context", lambda *a, **k: [])
+
+    focus_uri = "at://did:plc:target/app.bsky.feed.post/abc"
+    root_uri = "at://did:plc:root/app.bsky.feed.post/root"
+
+    # Patch focus resolve + thread fetch
+    monkeypatch.setattr(context_cmd, "_resolve_focus_uri", lambda pds, jwt, focus: focus_uri)
+    monkeypatch.setattr(
+        context_cmd,
+        "_get_post_thread",
+        lambda pds, jwt, uri, depth=10: {
+            "post": {
+                "uri": focus_uri,
+                "author": {"handle": "target.example"},
+                "record": {"text": "focus text"},
+            },
+            "parent": {
+                "post": {
+                    "uri": root_uri,
+                    "author": {"handle": "root.author"},
+                    "record": {"text": "root text"},
+                },
+                "parent": None,
+                "replies": [],
+            },
+            "replies": [
+                {
+                    "post": {
+                        "uri": "at://did:plc:x/app.bsky.feed.post/r1",
+                        "author": {"handle": "alice.example"},
+                        "record": {"text": "reply one"},
+                    },
+                    "parent": None,
+                    "replies": [],
+                }
+            ],
+        },
+    )
+
+    # Avoid legacy per-interaction root lookups
+    monkeypatch.setattr(context_cmd, "_get_root_uri_for_post_uri", lambda pds, jwt, uri: root_uri)
+    monkeypatch.setattr(context_cmd, "_get_post_text", lambda pds, jwt, uri: "root text")
+
+    args = SimpleNamespace(handle="target.example", dm=0, threads=1, json=False, focus=focus_uri)
+
+    rc = context_cmd.run(args)
+    assert rc == 0
+
+    out = capsys.readouterr().out
+    assert "focus:" in out
+    assert "path:" in out
+    assert "branches:" in out
+    assert "reply one" in out

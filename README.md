@@ -255,6 +255,9 @@ bsky context @jenrm.bsky.social --dm 20 --threads 10
 
 # JSON output (for piping into other tools)
 bsky context penny.hailey.at --json
+
+# Focus a specific post to get a reliable context path + branching replies
+bsky context penny.hailey.at --focus "https://bsky.app/profile/user/post/abc123"
 ```
 
 ### Interlocutor Tracking
