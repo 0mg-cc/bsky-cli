@@ -42,6 +42,10 @@ EXAMPLES:
   Notifications & DMs:
     bsky notify --all
     bsky dm user.bsky.social "Hello!"
+    bsky dms --preview 1
+
+  Context packs (for LLM prompts):
+    bsky context user.bsky.social
 
   Engagement (LLM-powered):
     bsky engage --dry-run

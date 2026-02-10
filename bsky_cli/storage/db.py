@@ -103,7 +103,10 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
 INTERLOCUTORS_JSON = Path.home() / ".bsky-cli" / "interlocutors.json"
 
 
-def _iter_interlocutors(path: Path = INTERLOCUTORS_JSON) -> Iterable[dict]:
+def _iter_interlocutors(path: Path | None = None) -> Iterable[dict]:
+    # NOTE: keep default lazy so tests (and callers) can monkeypatch INTERLOCUTORS_JSON
+    # without fighting with default-arg evaluation time.
+    path = path or INTERLOCUTORS_JSON
     if not path.exists():
         return []
     data = json.loads(path.read_text())
