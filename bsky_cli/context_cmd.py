@@ -130,6 +130,42 @@ def _extract_branching_answers(thread_node: dict, *, limit: int = 5) -> list[dic
     return out
 
 
+def _fetch_dm_context_from_db(conn, *, my_did: str, target_did: str, limit: int) -> list[dict]:
+    # Find convo(s) that include the target DID
+    rows = conn.execute(
+        "SELECT c.convo_id, c.last_message_at FROM dm_conversations c "
+        "JOIN dm_convo_members m ON m.convo_id=c.convo_id "
+        "WHERE m.did=? ORDER BY COALESCE(c.last_message_at,'') DESC LIMIT 1",
+        (target_did,),
+    ).fetchall()
+
+    if not rows:
+        return []
+
+    convo_id = rows[0]["convo_id"]
+
+    msgs = conn.execute(
+        "SELECT sent_at, actor_did, text FROM dm_messages WHERE convo_id=? ORDER BY sent_at DESC, msg_id DESC LIMIT ?",
+        (convo_id, max(1, int(limit))),
+    ).fetchall()
+
+    out = []
+    for r in reversed(msgs):
+        did = r["actor_did"]
+        handle = conn.execute("SELECT handle FROM actors WHERE did=?", (did,)).fetchone()
+        sender_handle = (handle[0] if handle else "") or ("(you)" if did == my_did else "unknown")
+        out.append(
+            {
+                "sentAt": r["sent_at"],
+                "senderDid": did,
+                "senderHandle": sender_handle,
+                "text": r["text"],
+            }
+        )
+
+    return out
+
+
 def _fetch_dm_context(pds: str, jwt: str, account_handle: str, target_handle: str, limit: int) -> list[dict]:
     target_handle = (target_handle or "").lstrip("@").lower()
     if not target_handle:
@@ -285,8 +321,10 @@ def run(args) -> int:
 
     tags = [r["tag"] for r in conn.execute("SELECT tag FROM actor_tags WHERE did=? ORDER BY tag", (target_did,))]
 
-    # HOT: recent DMs (live)
-    dm_msgs = _fetch_dm_context(pds, jwt, account_handle, handle, dm_limit)
+    # HOT: recent DMs (DB-first, live fallback)
+    dm_msgs = _fetch_dm_context_from_db(conn, my_did=my_did, target_did=target_did, limit=dm_limit)
+    if not dm_msgs:
+        dm_msgs = _fetch_dm_context(pds, jwt, account_handle, handle, dm_limit)
 
     # COLD: infer last shared threads from interactions
     inter_rows = conn.execute(

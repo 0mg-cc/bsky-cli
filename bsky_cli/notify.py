@@ -102,7 +102,7 @@ def get_post_url(n: dict) -> str | None:
 
 def run(args) -> int:
     """Execute notify command."""
-    pds, did, jwt, _ = get_session()
+    pds, did, jwt, account_handle = get_session()
 
     # New: scoring/triage mode
     if getattr(args, "score", False) or getattr(args, "execute", False):
@@ -116,6 +116,24 @@ def run(args) -> int:
     if not args.no_dm:
         try:
             new_dms = check_new_dms(pds, jwt, my_did=did)
+
+            # Best-effort: persist DMs into per-account SQLite for context/memory
+            if new_dms:
+                try:
+                    from .storage import open_db, ensure_schema, import_interlocutors_json
+                    from .storage.db import ingest_new_dms
+
+                    conn = open_db(account_handle)
+                    ensure_schema(conn)
+
+                    # Seed legacy interlocutors once (optional, anti-regression)
+                    c = conn.execute("SELECT COUNT(1) AS n FROM actors").fetchone()["n"]
+                    if int(c) == 0:
+                        import_interlocutors_json(conn)
+
+                    ingest_new_dms(conn, new_dms, my_did=did)
+                except Exception:
+                    pass
         except Exception as e:
             if not args.json:
                 print(f"⚠️  Could not check DMs: {e}\n")
