@@ -50,17 +50,18 @@ Règles :
 
 ## PR-004 — Threads index DB + extraits fiables focus-aware par défaut
 - [x] Index 10 threads “shared” depuis DB (source de vérité)
-- [x] Extraits fiables : root + path + branches + last us/them (sur le thread le plus récent via fallback)
+- [x] Extraits fiables : root + path + branches + last us/them (fallback focus)
 - [x] Fallback focus robuste (dernier post d’interaction)
 
-**PR GitHub** : https://github.com/echo931/bsky-cli/pull/8
+**PR GitHub** : https://github.com/echo931/bsky-cli/pull/8 (**MERGED**)
 
 ---
 
 ## PR-005 — FTS5 + `bsky search-history`
-- **PR GitHub**: https://github.com/echo931/bsky-cli/pull/11 (OPEN)
 - [ ] FTS5 sur DMs + threads/posts
 - [ ] `bsky search-history "term" --handle ... --source dm|threads|all --since/--until`
+
+**PR GitHub** : https://github.com/echo931/bsky-cli/pull/11 (**OPEN**)
 
 ---
 
