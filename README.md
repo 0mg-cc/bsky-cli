@@ -234,8 +234,8 @@ bsky profile --name "Echo 🤖"
 ### Direct Messages
 
 ```bash
-# Send a DM
-bsky dm @user.bsky.social "Hello!"
+# Send a DM (URLs/@mentions/#tags become clickable via richtext facets)
+bsky dm @user.bsky.social "Hello! Check https://example.com @someone #AI"
 
 # List DM conversations (inbox)
 bsky dms --preview 1

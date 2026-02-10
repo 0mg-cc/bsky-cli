@@ -115,7 +115,7 @@ def run(args) -> int:
     new_dms = []
     if not args.no_dm:
         try:
-            new_dms = check_new_dms(pds, jwt)
+            new_dms = check_new_dms(pds, jwt, my_did=did)
         except Exception as e:
             if not args.json:
                 print(f"⚠️  Could not check DMs: {e}\n")
