@@ -71,16 +71,24 @@ def check_new_dms(pds: str, jwt: str, *, my_did: str | None = None) -> list[dict
     for convo in convos:
         # Get the other member(s) - filter out self
         members = [m for m in convo.get("members", [])]
-        
-        # Check unread count
-        unread = convo.get("unreadCount", 0)
-        if unread == 0:
+
+        # If we have a cursor, avoid fetching convos that clearly haven't advanced.
+        convo_last = (
+            (convo.get("lastMessage") or {}).get("sentAt")
+            or (convo.get("lastMessage") or {}).get("createdAt")
+            or convo.get("lastMessageAt")
+            or ""
+        )
+        if last_seen and convo_last and convo_last <= last_seen:
             continue
-            
-        # Fetch recent messages
+
+        # Fetch recent messages. We intentionally don't rely on unreadCount: if the user reads
+        # a DM quickly, unreadCount can be 0 while the message is still new for us.
+        unread = int(convo.get("unreadCount", 0) or 0)
+        fetch_limit = max(5, unread + 5)
         try:
-            messages = get_dm_messages(pds, jwt, convo["id"], limit=unread + 5)
-        except:
+            messages = get_dm_messages(pds, jwt, convo["id"], limit=fetch_limit)
+        except Exception:
             continue
             
         for msg in messages:
@@ -92,14 +100,14 @@ def check_new_dms(pds: str, jwt: str, *, my_did: str | None = None) -> list[dict
                 
             sender = msg.get("sender", {})
 
+            # Track newest (advance cursor even if the newest message is ours)
+            if sent_at > newest_ts:
+                newest_ts = sent_at
+
             # Skip if it's from us (optional)
             if my_did and sender.get("did") == my_did:
                 continue
 
-            # Track newest
-            if sent_at > newest_ts:
-                newest_ts = sent_at
-                
             new_messages.append({
                 "convo_id": convo["id"],
                 "members": members,
