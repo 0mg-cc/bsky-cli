@@ -391,8 +391,36 @@ def run(args) -> int:
                 "root_text": (path[0].get("text") if path else "") or "",
             }
 
+    state_roots = [r["root_uri"] for r in state_rows]
+
+    # Ensure an explicit --focus always shows up, even if its root thread isn't indexed
+    # in the top-N rows (or if no rows exist yet).
+    if focus_pack and focus_root_uri and focus_root_uri not in state_roots:
+        # Best-effort last us/them if we already have state for this root
+        r2 = conn.execute(
+            "SELECT last_us, last_them FROM thread_actor_state WHERE root_uri=? AND actor_did=?",
+            (focus_root_uri, target_did),
+        ).fetchone()
+
+        threads.append(
+            {
+                "root_uri": focus_root_uri,
+                "url": uri_to_url(focus_root_uri),
+                "root_text": focus_pack.get("root_text") or "",
+                "focus_uri": focus_pack.get("focus_uri"),
+                "focus_url": focus_pack.get("focus_url"),
+                "context_path": focus_pack.get("context_path"),
+                "branching_answers": focus_pack.get("branching_answers"),
+                "last_us": (r2["last_us"] if r2 else "") or "",
+                "last_them": (r2["last_them"] if r2 else "") or "",
+            }
+        )
+
+    # Add remaining indexed threads (most recent first), skipping the focus root if we already added it
     for r in state_rows:
         root_uri = r["root_uri"]
+        if focus_root_uri and root_uri == focus_root_uri and any(t.get("root_uri") == focus_root_uri for t in threads):
+            continue
 
         root_text = ""
         if focus_pack and root_uri == focus_root_uri and focus_pack.get("root_text"):
@@ -422,6 +450,9 @@ def run(args) -> int:
             )
 
         threads.append(t)
+
+        if len(threads) >= threads_limit:
+            break
 
     pack = {
         "hot": {"dms": dm_msgs},
