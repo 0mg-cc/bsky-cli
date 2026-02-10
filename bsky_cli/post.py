@@ -34,8 +34,13 @@ class OGParser(HTMLParser):
             self._in_title = False
 
 
-def detect_facets(text: str) -> list[dict] | None:
-    """Detect URLs and hashtags in text."""
+def detect_facets(text: str, *, pds: str | None = None) -> list[dict] | None:
+    """Detect richtext facets (URLs, hashtags, and best-effort @mentions).
+
+    Notes:
+    - URLs and hashtags are detected purely locally.
+    - Mentions require handle→DID resolution, so they are only attempted when `pds` is provided.
+    """
     facets = []
     
     def char_to_byte(char_idx: int) -> int:
@@ -60,7 +65,34 @@ def detect_facets(text: str) -> list[dict] | None:
             "index": {"byteStart": byte_start, "byteEnd": byte_end},
             "features": [{"$type": "app.bsky.richtext.facet#tag", "tag": tag[1:]}]
         })
-    
+
+    # Mentions (best-effort): only if we have a PDS for resolveHandle.
+    if pds:
+        try:
+            from .auth import resolve_handle
+
+            # Conservative regex for handles (e.g. @alice.bsky.social)
+            for match in re.finditer(r'(?:^|\s)(@([A-Za-z0-9][A-Za-z0-9._-]{0,62}(?:\.[A-Za-z0-9][A-Za-z0-9._-]{0,62})+))', text):
+                full = match.group(1)
+                handle = match.group(2)
+
+                try:
+                    did = resolve_handle(pds, handle)
+                except Exception:
+                    continue
+
+                byte_start = char_to_byte(match.start(1))
+                byte_end = byte_start + len(full.encode('utf-8'))
+                facets.append({
+                    "index": {"byteStart": byte_start, "byteEnd": byte_end},
+                    "features": [{"$type": "app.bsky.richtext.facet#mention", "did": did}],
+                })
+        except Exception:
+            pass
+
+    # Sort for stability
+    facets.sort(key=lambda f: (f.get('index', {}).get('byteStart', 0), f.get('index', {}).get('byteEnd', 0)))
+
     return facets if facets else None
 
 
