@@ -480,10 +480,19 @@ BADGES IN NOTIFICATIONS:
   🆕 = first contact
 """
     )
-    people_parser.add_argument("handle", nargs="?", help="Handle to look up")
+    people_parser.add_argument("handle", nargs="?", help="Handle/DID to look up")
     people_parser.add_argument("--regulars", action="store_true", help="Show regulars only")
     people_parser.add_argument("--stats", action="store_true", help="Show statistics")
     people_parser.add_argument("--limit", type=int, default=20, help="Max users to show (default: 20)")
+
+    people_parser.add_argument("--set-note", dest="set_note", help="Set a manual note for this person")
+    people_parser.add_argument("--add-tag", dest="add_tag", action="append", help="Add a tag (repeatable)")
+    people_parser.add_argument("--remove-tag", dest="remove_tag", action="append", help="Remove a tag (repeatable)")
+
+    people_parser.add_argument("--enrich", action="store_true", help="Generate/update auto notes (dry-run by default)")
+    people_parser.add_argument("--execute", action="store_true", help="Persist enrich output to DB")
+    people_parser.add_argument("--force", action="store_true", help="Ignore enrich cooldown")
+    people_parser.add_argument("--min-age-hours", type=int, default=72, help="Min hours between enrich runs (default: 72)")
 
     # context (memory pack)
     context_parser = subparsers.add_parser(

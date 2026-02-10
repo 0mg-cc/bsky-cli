@@ -169,6 +169,20 @@ MIGRATIONS: list[str] = [
       VALUES (COALESCE(NEW.our_text,'') || '\n' || COALESCE(NEW.their_text,''), 'interaction', NEW.date, NEW.post_uri, NEW.actor_did, NULL, NULL);
     END;
     """,
+
+    # 5 — Auto notes snapshots (append-only)
+    """
+    CREATE TABLE IF NOT EXISTS actor_auto_notes (
+      did TEXT NOT NULL,
+      kind TEXT NOT NULL CHECK(kind IN ('notes','interests','tone')),
+      content TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      PRIMARY KEY (did, kind, created_at),
+      FOREIGN KEY (did) REFERENCES actors(did) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_actor_auto_notes_recent ON actor_auto_notes(did, kind, created_at);
+    """,
 ]
 
 
