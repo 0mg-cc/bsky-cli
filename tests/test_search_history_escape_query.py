@@ -52,3 +52,13 @@ def test_search_history_escapes_punctuated_literals(monkeypatch, capsys):
     data = json.loads(capsys.readouterr().out)
     assert data["results"]
     assert any("did:plc:target" in r["text"] for r in data["results"])
+
+def test_search_history_preserves_prefix_and_unary_not_operators():
+    """Regression: escaping should preserve common FTS operators like foo* and -foo."""
+
+    from bsky_cli.search_history_cmd import _fts_escape_query
+
+    assert _fts_escape_query("foo*") == "foo*"
+    assert _fts_escape_query("-foo") == "-foo"
+    # Punctuated tokens should be quoted (avoid FTS parse errors)
+    assert _fts_escape_query("did:plc:abc") == '"did:plc:abc"'

@@ -127,3 +127,47 @@ def test_search_history_scope_dm_filters_only_dm(monkeypatch, capsys):
     data = json.loads(out)
     assert data["results"]
     assert all(r["kind"] == "dm" for r in data["results"])
+
+
+def test_search_history_until_date_only_is_inclusive(monkeypatch, capsys):
+    """Regression: --until YYYY-MM-DD should include that whole day."""
+
+    from bsky_cli import search_history_cmd
+
+    monkeypatch.setattr(
+        search_history_cmd,
+        "get_session",
+        lambda: ("https://pds.invalid", "did:me", "jwt", "echo.0mg.cc"),
+    )
+    monkeypatch.setattr(search_history_cmd, "resolve_handle", lambda pds, h: "did:plc:target")
+
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    monkeypatch.setattr(search_history_cmd, "open_db", lambda account_handle: conn)
+
+    search_history_cmd.ensure_schema(conn)
+
+    conn.execute("INSERT OR IGNORE INTO dm_conversations(convo_id, last_message_at) VALUES (?,?)", ("c1", "2026-02-10T00:00:02Z"))
+    conn.execute("INSERT OR IGNORE INTO dm_convo_members(convo_id, did) VALUES (?,?)", ("c1", "did:plc:target"))
+    conn.execute("INSERT OR IGNORE INTO dm_convo_members(convo_id, did) VALUES (?,?)", ("c1", "did:me"))
+    conn.execute(
+        "INSERT OR IGNORE INTO dm_messages(convo_id, msg_id, actor_did, direction, sent_at, text) VALUES (?,?,?,?,?,?)",
+        ("c1", "m1", "did:plc:target", "in", "2026-02-10T00:00:02Z", "hello from dm"),
+    )
+    conn.commit()
+
+    args = SimpleNamespace(
+        handle="target.example",
+        query="hello",
+        scope="dm",
+        since=None,
+        until="2026-02-10",
+        limit=10,
+        json=True,
+    )
+
+    rc = search_history_cmd.run(args)
+    assert rc == 0
+
+    data = json.loads(capsys.readouterr().out)
+    assert any("hello from dm" in r["text"] for r in data["results"])

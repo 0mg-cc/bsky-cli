@@ -24,8 +24,10 @@ def _fts_escape_query(q: str) -> str:
     FTS5 parses MATCH input as an expression; punctuated literals like `did:plc:...`,
     `@handle`, or URLs can throw OperationalError unless quoted.
 
-    Strategy: keep whitespace semantics (implicit AND) but quote any token containing
-    non-alnum/underscore characters.
+    Goals:
+    - Keep phrase queries intact ("foo bar")
+    - Quote punctuated literals to avoid syntax errors
+    - Preserve common FTS operators/syntax (prefix `*`, unary `-`, parentheses)
     """
 
     q = (q or "").strip()
@@ -40,15 +42,46 @@ def _fts_escape_query(q: str) -> str:
         # Fallback if user has unmatched quotes
         tokens = q.split()
 
+    def is_bare_word(s: str) -> bool:
+        return bool(s) and all((c.isalnum() or c == "_") for c in s)
+
     out: list[str] = []
-    for tok in tokens:
+    for raw in tokens:
+        tok = raw
+
+        # Preserve parentheses as-is (basic grouping)
+        if tok in {"(", ")"}:
+            out.append(tok)
+            continue
+
+        # Preserve explicit boolean operators
+        if tok.upper() in {"AND", "OR", "NOT"}:
+            out.append(tok.upper())
+            continue
+
+        # Preserve NEAR (e.g. NEAR/5)
+        if tok.upper().startswith("NEAR/") and tok[5:].isdigit():
+            out.append(tok.upper())
+            continue
+
+        # Handle unary NOT prefix (-term)
+        prefix = ""
+        if tok.startswith("-") and len(tok) > 1:
+            prefix = "-"
+            tok = tok[1:]
+
+        # Preserve prefix queries like foo*
+        if tok.endswith("*") and is_bare_word(tok[:-1]):
+            out.append(prefix + tok)
+            continue
+
         # Quote tokens with punctuation/symbols (including ':' '/' '.' '@') OR spaces
         # to force literal/phrase match.
-        if (" " in tok) or any((not c.isalnum()) and c != "_" for c in tok):
+        if (" " in tok) or not is_bare_word(tok):
             tok = tok.replace('"', '""')
-            out.append(f'"{tok}"')
+            out.append(prefix + f'"{tok}"')
         else:
-            out.append(tok)
+            out.append(prefix + tok)
 
     return " ".join(out)
 
@@ -145,6 +178,13 @@ def run(args) -> int:
     until = getattr(args, "until", None)
     limit = int(getattr(args, "limit", 25))
     as_json = bool(getattr(args, "json", False))
+
+    # Normalize date-only bounds to be inclusive.
+    # Stored timestamps are full ISO strings (e.g. 2026-02-10T00:00:02Z).
+    if isinstance(since, str) and len(since) == 10 and since.count("-") == 2:
+        since = since + "T00:00:00Z"
+    if isinstance(until, str) and len(until) == 10 and until.count("-") == 2:
+        until = until + "T23:59:59Z"
 
     pds, _my_did, _jwt, account_handle = get_session()
 
