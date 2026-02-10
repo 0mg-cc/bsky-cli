@@ -71,7 +71,9 @@ Règles :
 - [x] `bsky people --enrich` opt-in (dry-run par défaut) : notes_auto + interests_auto + tone
 - [x] Drift prevention : cooldown `--min-age-hours` + `--force`
 - [x] Versioning append-only : snapshots `actor_auto_notes` (notes/interests/tone)
-- [ ] Docs/UX polish (help text + README snippets) + review Codex
+- [x] Review Codex traitée + merge
+
+**PR GitHub** : https://github.com/echo931/bsky-cli/pull/14 (**MERGED**)
 
 ---
 
