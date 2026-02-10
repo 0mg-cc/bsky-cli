@@ -70,7 +70,9 @@ def get_session() -> tuple[str, str, str, str]:
             pds = svc.get("serviceEndpoint", pds)
             break
     
-    return pds, sess["did"], sess["accessJwt"], handle or email
+    # Use the server-returned handle when available (even if we logged in via email)
+    actual_handle = sess.get("handle") or handle or email
+    return pds, sess["did"], sess["accessJwt"], actual_handle
 
 
 def utc_now_iso() -> str:
