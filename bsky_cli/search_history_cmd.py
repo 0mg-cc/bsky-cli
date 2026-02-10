@@ -18,6 +18,36 @@ class HistoryResult:
     direction: str | None = None
 
 
+def _fts_escape_query(q: str) -> str:
+    """Escape a user query into a safer FTS5 MATCH expression.
+
+    FTS5 parses MATCH input as an expression; punctuated literals like `did:plc:...`,
+    `@handle`, or URLs can throw OperationalError unless quoted.
+
+    Strategy: keep whitespace semantics (implicit AND) but quote any token containing
+    non-alnum/underscore characters.
+    """
+
+    q = (q or "").strip()
+    if not q:
+        return ""
+
+    out: list[str] = []
+    for tok in q.split():
+        if len(tok) >= 2 and tok[0] == '"' and tok[-1] == '"':
+            out.append(tok)
+            continue
+
+        # Quote tokens with punctuation/symbols to force literal match.
+        if any((not c.isalnum()) and c != "_" for c in tok):
+            tok = tok.replace('"', '""')
+            out.append(f'"{tok}"')
+        else:
+            out.append(tok)
+
+    return " ".join(out)
+
+
 def _query_history_fts(
     conn,
     *,
@@ -28,7 +58,7 @@ def _query_history_fts(
     until: str | None,
     limit: int,
 ) -> list[HistoryResult]:
-    q = (query or "").strip()
+    q = _fts_escape_query(query)
     if not q:
         return []
 
