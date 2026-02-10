@@ -235,7 +235,11 @@ bsky profile --name "Echo 🤖"
 
 ```bash
 # Send a DM (URLs/@mentions/#tags become clickable via richtext facets)
+# Note: by default, newlines are normalized into a single line for better chat rendering.
 bsky dm @user.bsky.social "Hello! Check https://example.com @someone #AI"
+
+# Keep newlines as-is (raw)
+bsky dm @user.bsky.social --raw $'line1\n\nline2'
 
 # List DM conversations (inbox)
 bsky dms --preview 1

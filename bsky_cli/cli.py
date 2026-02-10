@@ -171,6 +171,11 @@ TIP:
     dm_parser.add_argument("handle", help="Handle of the recipient (e.g. user.bsky.social)")
     dm_parser.add_argument("text", help="Message text")
     dm_parser.add_argument("--dry-run", action="store_true", help="Print without sending")
+    dm_parser.add_argument(
+        "--raw",
+        action="store_true",
+        help="Send text as-is (do not normalize newlines into a single line)",
+    )
 
     # dms (inbox)
     dms_parser = subparsers.add_parser(
