@@ -66,9 +66,12 @@ Règles :
 ---
 
 ## PR-006 — People/notes v2 (DB) + enrich opt-in + drift prevention
-- [ ] `bsky people` lit/écrit DB
-- [ ] `people enrich` opt-in : résumés courts (2–4 phrases) + interests/tone
-- [ ] Timestamps + (idéalement) versioning append-only
+- [x] `bsky people` lit/écrit DB (stats/list/single)
+- [x] Notes/tags manuels en DB (`--set-note`, `--add-tag`, `--remove-tag`)
+- [x] `bsky people --enrich` opt-in (dry-run par défaut) : notes_auto + interests_auto + tone
+- [x] Drift prevention : cooldown `--min-age-hours` + `--force`
+- [x] Versioning append-only : snapshots `actor_auto_notes` (notes/interests/tone)
+- [ ] Docs/UX polish (help text + README snippets) + review Codex
 
 ---
 
