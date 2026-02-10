@@ -134,6 +134,41 @@ MIGRATIONS: list[str] = [
 
     CREATE INDEX IF NOT EXISTS idx_thread_actor_recent ON thread_actor_state(actor_did, last_interaction_at);
     """,
+
+    # 4 — History search (FTS5)
+    """
+    CREATE VIRTUAL TABLE IF NOT EXISTS history_fts USING fts5(
+      text,
+      kind UNINDEXED,
+      ts UNINDEXED,
+      uri UNINDEXED,
+      actor_did UNINDEXED,
+      convo_id UNINDEXED,
+      direction UNINDEXED
+    );
+
+    -- Backfill from existing rows (migration runs once)
+    INSERT INTO history_fts(text, kind, ts, uri, actor_did, convo_id, direction)
+    SELECT text, 'dm', sent_at, NULL, actor_did, convo_id, direction FROM dm_messages;
+
+    INSERT INTO history_fts(text, kind, ts, uri, actor_did, convo_id, direction)
+    SELECT COALESCE(our_text,'' ) || '\n' || COALESCE(their_text,''), 'interaction', date, post_uri, actor_did, NULL, NULL
+    FROM interactions;
+
+    CREATE TRIGGER IF NOT EXISTS trg_history_dm_ai
+    AFTER INSERT ON dm_messages
+    BEGIN
+      INSERT INTO history_fts(text, kind, ts, uri, actor_did, convo_id, direction)
+      VALUES (NEW.text, 'dm', NEW.sent_at, NULL, NEW.actor_did, NEW.convo_id, NEW.direction);
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS trg_history_inter_ai
+    AFTER INSERT ON interactions
+    BEGIN
+      INSERT INTO history_fts(text, kind, ts, uri, actor_did, convo_id, direction)
+      VALUES (COALESCE(NEW.our_text,'') || '\n' || COALESCE(NEW.their_text,''), 'interaction', NEW.date, NEW.post_uri, NEW.actor_did, NULL, NULL);
+    END;
+    """,
 ]
 
 
