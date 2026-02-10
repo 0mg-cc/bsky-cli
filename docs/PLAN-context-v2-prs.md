@@ -36,7 +36,7 @@ Règles :
 - [x] `bsky notify` : ingest best-effort (poller “ingest then decide” sera fait séparément côté scripts)
 - [x] `bsky context` : HOT depuis DB, fallback live
 
-**PR GitHub** : https://github.com/echo931/bsky-cli/pull/5
+**PR GitHub** : https://github.com/echo931/bsky-cli/pull/5 (**MERGED**)
 
 ---
 
