@@ -262,9 +262,21 @@ def upsert_thread_actor_state(
             "VALUES (?,?,?,?,?,?) "
             "ON CONFLICT(root_uri, actor_did) DO UPDATE SET "
             "last_interaction_at=MAX(thread_actor_state.last_interaction_at, excluded.last_interaction_at), "
-            "last_post_uri=COALESCE(excluded.last_post_uri, thread_actor_state.last_post_uri), "
-            "last_us=CASE WHEN excluded.last_us!='' THEN excluded.last_us ELSE thread_actor_state.last_us END, "
-            "last_them=CASE WHEN excluded.last_them!='' THEN excluded.last_them ELSE thread_actor_state.last_them END",
+            "last_post_uri=CASE "
+            "  WHEN excluded.last_interaction_at >= thread_actor_state.last_interaction_at "
+            "  THEN COALESCE(excluded.last_post_uri, thread_actor_state.last_post_uri) "
+            "  ELSE thread_actor_state.last_post_uri "
+            "END, "
+            "last_us=CASE "
+            "  WHEN excluded.last_interaction_at >= thread_actor_state.last_interaction_at AND excluded.last_us!='' "
+            "  THEN excluded.last_us "
+            "  ELSE thread_actor_state.last_us "
+            "END, "
+            "last_them=CASE "
+            "  WHEN excluded.last_interaction_at >= thread_actor_state.last_interaction_at AND excluded.last_them!='' "
+            "  THEN excluded.last_them "
+            "  ELSE thread_actor_state.last_them "
+            "END",
             (root_uri, actor_did, last_interaction_at, last_post_uri, last_us, last_them),
         )
 

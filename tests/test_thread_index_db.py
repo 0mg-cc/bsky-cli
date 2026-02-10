@@ -22,6 +22,51 @@ def test_schema_includes_thread_index_tables():
     assert "thread_actor_state" in tables
 
 
+def test_thread_actor_state_does_not_drift_when_processed_newest_to_oldest():
+    """Regression test: when upserting newest→oldest interactions, older rows must not overwrite last_post_uri/us/them."""
+
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    dbmod.ensure_schema(conn)
+
+    # minimal actor
+    conn.execute("INSERT INTO actors(did, handle) VALUES (?,?)", ("did:plc:target", "target.example"))
+
+    root_uri = "at://did:plc:root/app.bsky.feed.post/root"
+
+    # Insert NEWER interaction first
+    dbmod.upsert_thread_actor_state(
+        conn,
+        root_uri=root_uri,
+        actor_did="did:plc:target",
+        last_interaction_at="2026-02-10T10:00:00Z",
+        last_post_uri="at://did:plc:target/app.bsky.feed.post/new",
+        last_us="new us",
+        last_them="new them",
+    )
+
+    # Then process an OLDER interaction (this should NOT overwrite)
+    dbmod.upsert_thread_actor_state(
+        conn,
+        root_uri=root_uri,
+        actor_did="did:plc:target",
+        last_interaction_at="2026-02-09T10:00:00Z",
+        last_post_uri="at://did:plc:target/app.bsky.feed.post/old",
+        last_us="old us",
+        last_them="old them",
+    )
+
+    row = conn.execute(
+        "SELECT last_interaction_at, last_post_uri, last_us, last_them FROM thread_actor_state WHERE root_uri=? AND actor_did=?",
+        (root_uri, "did:plc:target"),
+    ).fetchone()
+
+    assert row["last_interaction_at"] == "2026-02-10T10:00:00Z"
+    assert row["last_post_uri"].endswith("/new")
+    assert row["last_us"] == "new us"
+    assert row["last_them"] == "new them"
+
+
 def test_context_without_focus_uses_recent_thread_position(monkeypatch, capsys):
     # Patch session
     monkeypatch.setattr(
