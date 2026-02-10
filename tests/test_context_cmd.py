@@ -72,19 +72,18 @@ def test_context_run_smoke(monkeypatch, capsys):
     )
     conn.commit()
 
-    # Patch DM fetch to avoid network
-    monkeypatch.setattr(
-        context_cmd,
-        "_fetch_dm_context",
-        lambda pds, jwt, account_handle, handle, limit: [
-            {
-                "sentAt": "2026-02-10T00:00:00Z",
-                "senderDid": "did:plc:target",
-                "senderHandle": "target.example",
-                "text": "hello from dm",
-            }
-        ],
+    # Seed DMs in DB (DB-first hot context)
+    conn.execute("INSERT OR IGNORE INTO dm_conversations(convo_id, last_message_at) VALUES (?,?)", ("c1", "2026-02-10T00:00:00Z"))
+    conn.execute("INSERT OR IGNORE INTO dm_convo_members(convo_id, did) VALUES (?,?)", ("c1", "did:plc:target"))
+    conn.execute("INSERT OR IGNORE INTO dm_convo_members(convo_id, did) VALUES (?,?)", ("c1", "did:me"))
+    conn.execute(
+        "INSERT OR IGNORE INTO dm_messages(convo_id, msg_id, actor_did, direction, sent_at, text) VALUES (?,?,?,?,?,?)",
+        ("c1", "m1", "did:plc:target", "in", "2026-02-10T00:00:00Z", "hello from dm"),
     )
+    conn.commit()
+
+    # Patch live DM fetch to ensure DB path is used (no network)
+    monkeypatch.setattr(context_cmd, "_fetch_dm_context", lambda *a, **k: [])
 
     # Patch thread root + post text
     monkeypatch.setattr(context_cmd, "_get_root_uri_for_post_uri", lambda pds, jwt, uri: "at://did:plc:target/app.bsky.feed.post/root")

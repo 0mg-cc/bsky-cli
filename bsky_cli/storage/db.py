@@ -80,6 +80,37 @@ MIGRATIONS: list[str] = [
 
     CREATE INDEX IF NOT EXISTS idx_interactions_actor_date ON interactions(actor_did, date);
     """,
+
+    # 2 — DMs
+    """
+    CREATE TABLE IF NOT EXISTS dm_conversations (
+      convo_id TEXT PRIMARY KEY,
+      last_message_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS dm_convo_members (
+      convo_id TEXT NOT NULL,
+      did TEXT NOT NULL,
+      PRIMARY KEY (convo_id, did)
+    );
+
+    CREATE TABLE IF NOT EXISTS dm_messages (
+      convo_id TEXT NOT NULL,
+      msg_id TEXT NOT NULL,
+      actor_did TEXT NOT NULL,
+      direction TEXT NOT NULL CHECK(direction IN ('in','out')),
+      sent_at TEXT NOT NULL,
+      text TEXT NOT NULL,
+      facets_json TEXT,
+      raw_json TEXT,
+      PRIMARY KEY (convo_id, msg_id),
+      FOREIGN KEY (actor_did) REFERENCES actors(did) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_dm_messages_actor_time ON dm_messages(actor_did, sent_at);
+    CREATE INDEX IF NOT EXISTS idx_dm_messages_convo_time ON dm_messages(convo_id, sent_at);
+    CREATE INDEX IF NOT EXISTS idx_dm_members_did ON dm_convo_members(did);
+    """,
 ]
 
 
@@ -94,6 +125,89 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
         with conn:
             conn.executescript(sql)
             conn.execute("INSERT INTO schema_migrations(version) VALUES (?)", (idx,))
+
+
+# -----------------------------------------------------------------------------
+# DMs (ingestion)
+# -----------------------------------------------------------------------------
+
+
+def ingest_new_dms(conn: sqlite3.Connection, new_dms: list[dict], *, my_did: str) -> int:
+    """Insert DM messages into the DB (idempotent).
+
+    Expects items like those returned by bsky_cli.dm.check_new_dms().
+    Returns number of new messages inserted.
+    """
+
+    inserted = 0
+
+    def upsert_actor_from_member(m: dict) -> None:
+        did = m.get("did")
+        if not did:
+            return
+        handle = m.get("handle")
+        display = m.get("displayName") or m.get("display_name")
+        conn.execute(
+            "INSERT INTO actors(did, handle, display_name) VALUES (?,?,?) "
+            "ON CONFLICT(did) DO UPDATE SET handle=COALESCE(excluded.handle, handle), display_name=COALESCE(excluded.display_name, display_name)",
+            (did, handle, display),
+        )
+
+    for dm in new_dms or []:
+        convo_id = dm.get("convo_id")
+        msg_id = dm.get("message_id") or dm.get("msg_id") or ""
+        sender = dm.get("sender") or {}
+        sender_did = sender.get("did") or ""
+        sent_at = dm.get("sent_at") or dm.get("sentAt") or ""
+        text = dm.get("text") or ""
+
+        if not convo_id or not msg_id or not sender_did or not sent_at:
+            continue
+
+        # Keep actor directory fresh + members mapping
+        for m in dm.get("members", []) or []:
+            upsert_actor_from_member(m)
+
+        direction = "out" if sender_did == my_did else "in"
+
+        facets_json = None
+        if dm.get("facets") is not None:
+            try:
+                facets_json = json.dumps(dm.get("facets"), ensure_ascii=False)
+            except Exception:
+                facets_json = None
+
+        raw_json = None
+        try:
+            raw_json = json.dumps(dm, ensure_ascii=False)
+        except Exception:
+            raw_json = None
+
+        with conn:
+            conn.execute(
+                "INSERT OR IGNORE INTO dm_conversations(convo_id, last_message_at) VALUES (?,?)",
+                (convo_id, sent_at),
+            )
+            conn.execute(
+                "UPDATE dm_conversations SET last_message_at=MAX(COALESCE(last_message_at,''), ?) WHERE convo_id=?",
+                (sent_at, convo_id),
+            )
+
+            for m in dm.get("members", []) or []:
+                did = m.get("did")
+                if did:
+                    conn.execute(
+                        "INSERT OR IGNORE INTO dm_convo_members(convo_id, did) VALUES (?,?)",
+                        (convo_id, did),
+                    )
+
+            cur = conn.execute(
+                "INSERT OR IGNORE INTO dm_messages(convo_id, msg_id, actor_did, direction, sent_at, text, facets_json, raw_json) VALUES (?,?,?,?,?,?,?,?)",
+                (convo_id, msg_id, sender_did, direction, sent_at, text, facets_json, raw_json),
+            )
+            inserted += cur.rowcount
+
+    return inserted
 
 
 # -----------------------------------------------------------------------------
