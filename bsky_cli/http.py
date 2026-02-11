@@ -22,6 +22,12 @@ def get_limiter() -> RateLimiter:
 class _RateLimitedRequests:
     """Drop-in subset of requests module with rate limiting."""
 
+    # Proxy exception classes so except clauses work
+    ConnectionError = _requests.ConnectionError
+    Timeout = _requests.Timeout
+    HTTPError = _requests.HTTPError
+    RequestException = _requests.RequestException
+
     @staticmethod
     def get(url: str, **kwargs):
         get_limiter().wait_if_needed()
