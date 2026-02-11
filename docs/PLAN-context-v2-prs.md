@@ -78,5 +78,8 @@ Règles :
 ---
 
 ## PR-007 — Migration threads_mod state JSON → SQLite (fin du legacy)
-- [ ] watch/backoff/state en DB
-- [ ] commande de migration one-shot
+- [x] watch/backoff/state en DB (tables `threads_mod_*` + DB-backed load/save)
+- [x] commande de migration one-shot : `bsky threads migrate-state [--from-json] [--archive-json] [--dry-run]`
+- [ ] Review Codex + merge
+
+**PR GitHub** : https://github.com/echo931/bsky-cli/pull/15 (OPEN)
