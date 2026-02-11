@@ -80,6 +80,47 @@ Règles :
 ## PR-007 — Migration threads_mod state JSON → SQLite (fin du legacy)
 - [x] watch/backoff/state en DB (tables `threads_mod_*` + DB-backed load/save)
 - [x] commande de migration one-shot : `bsky threads migrate-state [--from-json] [--archive-json] [--dry-run]`
-- [ ] Review Codex + merge
+- [x] Review Codex + merge
 
-**PR GitHub** : https://github.com/echo931/bsky-cli/pull/15 (OPEN)
+**PR GitHub** : https://github.com/echo931/bsky-cli/pull/15 (**MERGED**)
+
+---
+
+## Hotfix plan (post-PR007) — bugs trouvés en tests manuels
+
+### P0 — `bsky threads tree` cassé (`Unknown threads command`)
+- **Symptôme**: `bsky threads tree <url>` retourne `Unknown threads command`.
+- **Cause probable**: `tree` documenté dans le parser/help mais non routé dans `threads_mod/commands.py::run()` (branche manquante vers `cmd_tree`).
+- **Fix immédiat**:
+  1. Ajouter le dispatch `elif args.threads_command == "tree": return cmd_tree(args)`.
+  2. Ajouter test CLI régression (commande `threads tree` route bien et n’échoue plus sur “Unknown threads command”).
+  3. Vérifier output arbre sur un thread réel.
+
+### P0 — `bsky context` échoue (DB schema)
+- **Symptôme**: `sqlite3.OperationalError: no such table: dm_convo_members`.
+- **Cause probable**: migration/schéma SQLite incomplet sur certaines DB account (tables DM membership absentes), code `context_cmd` suppose schéma complet.
+- **Fix immédiat**:
+  1. Garantir migration DM au startup/open DB (idempotent).
+  2. Ajouter garde-fou: si table absente, fallback contrôlé + message actionnable (pas traceback brut).
+  3. Test d’intégration: DB legacy partielle -> `bsky context ... --json` passe après auto-migration.
+
+### P0 — `bsky search-history` échoue (même cause DB)
+- **Symptôme**: même erreur `no such table: dm_convo_members`.
+- **Cause probable**: requête FTS joint/filtre sur schéma attendu, mais DB pas migrée.
+- **Fix immédiat**:
+  1. Réutiliser la même stratégie migration/ensure-schema que `context`.
+  2. Test d’intégration: DB partielle -> `search-history` retourne résultat vide ou hits, pas crash.
+
+### P1 — Stabilité runtime `engage` / `appreciate` / `discover`
+- **Symptôme**: appels parfois longs/hang en tests manuels, sessions interrompues par timeout/SIGKILL côté orchestration.
+- **Cause probable**: latence réseau/LLM + absence d’output progressif + commandes non bornées.
+- **Fix immédiat**:
+  1. Ajouter timeout interne configurable + logs progressifs (phase fetch/select/generate/post).
+  2. Ajouter mode `--max-runtime-seconds` (safe for cron/manual smoke).
+  3. Tests smoke en CI avec budgets faibles et timeout court.
+
+## Exécution immédiate (ordre)
+1. Hotfix P0 `threads tree`.
+2. Hotfix P0 migration/ensure-schema partagée pour `context` + `search-history`.
+3. Re-run tests manuels (commandes cron + outputs réels) et coller sorties.
+4. Stabilisation P1 timeouts/observabilité pour `engage`/`appreciate`/`discover`.
