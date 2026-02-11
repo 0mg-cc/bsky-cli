@@ -17,6 +17,7 @@ from .auth import get_session, load_from_pass
 from .config import get, get_section
 from .like import like_post
 from .post import detect_facets
+from .runtime_guard import RuntimeGuard, TIMEOUT_EXIT_CODE, log_phase
 
 # ============================================================================
 # CONFIGURATION (loaded from ~/.config/bsky-cli/config.yaml)
@@ -707,16 +708,20 @@ def run(args) -> int:
     print("🔗 Connecting to BlueSky...")
     pds, did, jwt, handle = get_session()
     print(f"✓ Logged in as @{handle}")
-    
+
     state = load_state()
     conversations = load_conversations()
     hours = getattr(args, 'hours', 12)
     dry_run = getattr(args, 'dry_run', False)
-    
+    guard = RuntimeGuard(getattr(args, 'max_runtime_seconds', None))
+
     # Create filter pipeline
     pipeline = create_default_pipeline(did)
-    
+
     # Collect posts from follows
+    log_phase("collect")
+    if guard.check("collect"):
+        return TIMEOUT_EXIT_CODE
     print("📋 Fetching follows...")
     follows = get_follows(pds, jwt, did)
     print(f"✓ Following {len(follows)} accounts")
@@ -724,6 +729,8 @@ def run(args) -> int:
     print(f"📰 Fetching recent posts (last {hours}h)...")
     all_posts: list[Post] = []
     for i, follow in enumerate(follows):
+        if guard.check("collect"):
+            return TIMEOUT_EXIT_CODE
         if i % 50 == 0 and i > 0:
             print(f"  ...checked {i}/{len(follows)} accounts")
         feed = get_author_feed(pds, jwt, follow["did"])
@@ -744,6 +751,9 @@ def run(args) -> int:
         return 0
     
     # Apply filter pipeline
+    log_phase("score")
+    if guard.check("score"):
+        return TIMEOUT_EXIT_CODE
     print("🔍 Filtering candidates...")
     candidates = pipeline.process(all_posts, state)
     print(f"✓ {len(candidates)} posts passed filters")
@@ -753,6 +763,9 @@ def run(args) -> int:
         return 0
     
     # LLM selection
+    log_phase("decide")
+    if guard.check("decide"):
+        return TIMEOUT_EXIT_CODE
     print("🤖 Selecting interesting posts...")
     selections = select_posts_with_llm(candidates, state, dry_run=dry_run)
     
@@ -761,8 +774,22 @@ def run(args) -> int:
         return 0
     
     print(f"\n{'[DRY RUN] ' if dry_run else ''}Selected {len(selections)} posts:\n")
-    
+
+    log_phase("act")
+    if guard.check("act"):
+        if not dry_run:
+            save_state(state)
+            save_conversations(conversations)
+            print("⏱️ Timeout — partial state saved.")
+        return TIMEOUT_EXIT_CODE
+
     for sel in selections:
+        if guard.check("act"):
+            if not dry_run:
+                save_state(state)
+                save_conversations(conversations)
+                print("⏱️ Timeout — partial state saved.")
+            return TIMEOUT_EXIT_CODE
         print(f"@{sel['author_handle']}:")
         print(f"  Reason: {sel.get('reason', 'N/A')}")
         print(f"  Reply: {sel['reply']}")
@@ -841,6 +868,7 @@ ARCHITECTURE:
     )
     parser.add_argument("--dry-run", action="store_true", help="Preview without posting")
     parser.add_argument("--hours", type=int, default=12, help="Look back N hours (default: 12)")
+    parser.add_argument("--max-runtime-seconds", type=int, default=None, help="Abort after N seconds wall-clock")
     args = parser.parse_args()
     return run(args)
 

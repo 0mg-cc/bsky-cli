@@ -1,0 +1,6 @@
+$ bsky engage --dry-run --hours 2 --max-runtime-seconds 0
+🔗 Connecting to BlueSky...
+✓ Logged in as @echo.0mg.cc
+⏱️ Phase: collect
+⏱️ Timed out after 0s during phase: collect
+exit:124

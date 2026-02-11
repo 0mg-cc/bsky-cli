@@ -18,6 +18,7 @@ import random
 import subprocess
 import sys
 from datetime import datetime
+from time import sleep
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -651,31 +652,49 @@ B) Thread:
 
 Return ONLY valid JSON, no markdown."""
 
-    try:
-        r = requests.post(
-            "https://openrouter.ai/api/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json"
-            },
-            json={
-                "model": "google/gemini-3-flash-preview",
-                "messages": [{"role": "user", "content": prompt}],
-                "temperature": 0.8
-            },
-            timeout=60
-        )
-        r.raise_for_status()
-        
-        content = r.json()["choices"][0]["message"]["content"]
-        content = content.strip()
-        if content.startswith("```"):
-            content = "\n".join(content.split("\n")[1:-1])
-        
-        return json.loads(content)
-    except Exception as e:
-        print(f"❌ LLM error: {e}")
-        return None
+    max_retries = int(get("organic.llm_retry_max_retries", 2))
+    base_backoff = float(get("organic.llm_retry_base_seconds", 3))
+
+    for attempt in range(max_retries + 1):
+        try:
+            r = requests.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "model": "google/gemini-3-flash-preview",
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0.8
+                },
+                timeout=60
+            )
+
+            if r.status_code == 429 and attempt < max_retries:
+                retry_after = r.headers.get("Retry-After") if hasattr(r, "headers") else None
+                wait_s = float(retry_after) if retry_after and str(retry_after).isdigit() else base_backoff * (2 ** attempt)
+                print(f"⚠️ LLM rate-limited (429), retry {attempt + 1}/{max_retries} in {wait_s:.1f}s")
+                sleep(wait_s)
+                continue
+
+            r.raise_for_status()
+
+            content = r.json()["choices"][0]["message"]["content"]
+            content = content.strip()
+            if content.startswith("```"):
+                content = "\n".join(content.split("\n")[1:-1])
+
+            return json.loads(content)
+        except Exception as e:
+            if attempt < max_retries:
+                print(f"⚠️ LLM error (attempt {attempt + 1}/{max_retries + 1}): {e}")
+                sleep(base_backoff * (2 ** attempt))
+                continue
+            print(f"❌ LLM error: {e}")
+            return None
+
+    return None
 
 
 # ============================================================================

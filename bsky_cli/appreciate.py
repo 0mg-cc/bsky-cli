@@ -24,6 +24,7 @@ from .auth import get_session, load_from_pass
 from .config import get, get_section
 from .like import like_post, resolve_post
 from .post import detect_facets
+from .runtime_guard import RuntimeGuard, TIMEOUT_EXIT_CODE, log_phase
 from .post import create_post, create_quote_embed
 
 
@@ -345,13 +346,17 @@ def run(args) -> int:
     print("🔗 Connecting to BlueSky...")
     pds, did, jwt, handle = get_session()
     print(f"✓ Logged in as @{handle}")
-    
+
     state = load_state()
     hours = getattr(args, 'hours', 12)
     dry_run = getattr(args, 'dry_run', False)
     max_actions = getattr(args, 'max', 5)
-    
+    guard = RuntimeGuard(getattr(args, 'max_runtime_seconds', None))
+
     # Collect posts from follows
+    log_phase("collect")
+    if guard.check("collect"):
+        return TIMEOUT_EXIT_CODE
     print("📋 Fetching follows...")
     follows = get_follows(pds, jwt, did)
     print(f"✓ Following {len(follows)} accounts")
@@ -359,6 +364,8 @@ def run(args) -> int:
     print(f"📰 Fetching recent posts (last {hours}h)...")
     all_posts: list[dict] = []
     for i, follow in enumerate(follows):
+        if guard.check("collect"):
+            return TIMEOUT_EXIT_CODE
         if i % 50 == 0 and i > 0:
             print(f"  ...checked {i}/{len(follows)} accounts")
         feed = get_author_feed(pds, jwt, follow["did"])
@@ -366,12 +373,19 @@ def run(args) -> int:
         all_posts.extend(recent)
     
     print(f"✓ Found {len(all_posts)} posts in the last {hours}h")
-    
+
+    log_phase("score")
+    if guard.check("score"):
+        return TIMEOUT_EXIT_CODE
+
     if not all_posts:
         print("No posts to appreciate.")
         return 0
     
     # LLM selection
+    log_phase("decide")
+    if guard.check("decide"):
+        return TIMEOUT_EXIT_CODE
     print("🤖 Selecting posts to appreciate...")
     selections = select_posts_with_llm(all_posts, state, max_select=max_actions, dry_run=dry_run)
     
@@ -380,13 +394,25 @@ def run(args) -> int:
         return 0
     
     print(f"\n{'[DRY RUN] ' if dry_run else ''}Selected {len(selections)} posts:\n")
-    
+
+    log_phase("act")
+    if guard.check("act"):
+        if not dry_run:
+            save_state(state)
+            print("⏱️ Timeout — partial state saved.")
+        return TIMEOUT_EXIT_CODE
+
     likes = 0
     quotes = 0
     skips = 0
     now = dt.datetime.now(dt.timezone.utc).isoformat()
     
     for sel in selections:
+        if guard.check("act"):
+            if not dry_run:
+                save_state(state)
+                print("⏱️ Timeout — partial state saved.")
+            return TIMEOUT_EXIT_CODE
         action = sel["action"]
         
         # Apply probabilistic override for likes
@@ -481,6 +507,7 @@ PROBABILISTIC BEHAVIOR:
     parser.add_argument("--dry-run", action="store_true", help="Preview without acting")
     parser.add_argument("--hours", type=int, default=12, help="Look back N hours (default: 12)")
     parser.add_argument("--max", type=int, default=5, help="Max posts to select (default: 5)")
+    parser.add_argument("--max-runtime-seconds", type=int, default=None, help="Abort after N seconds wall-clock")
     args = parser.parse_args()
     return run(args)
 

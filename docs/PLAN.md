@@ -133,25 +133,33 @@ Pour chaque commande réparée puis pour toutes les autres:
   - tests: `tests/test_storage_schema_self_heal.py`
   - tests réels: `bsky context echo.0mg.cc --json` et `bsky search-history echo.0mg.cc "memory" --json`
 
-- ⏳ P1 robustesse runtime (`engage` / `appreciate` / `discover`) à faire
+- 🔄 P1 robustesse runtime (`engage` / `appreciate` / `discover`) en cours
+  - ✅ ajout flag `--max-runtime-seconds` sur `engage`, `appreciate`, `discover follows/reposts`
+  - ✅ garde-fou wall-clock commun (`runtime_guard.py`) + code retour timeout non-zero (`124`)
+  - ✅ logs de progression explicites par phase (`collect → score → decide → act`)
+  - ✅ tests ciblés timeout/progression: `tests/test_runtime_bounds.py` (4 passed)
+  - ✅ smoke réels (budget timeout minimal) archivés dans `docs/help-snapshots/`:
+    - `p1-smoke-engage-timeout-2026-02-11.txt`
+    - `p1-smoke-appreciate-timeout-2026-02-11.txt`
+    - `p1-smoke-discover-timeout-2026-02-11.txt`
 - ⏳ Sweep exhaustif commande par commande à faire
 
 ## Plan d’action immédiat (actionnable)
 
 ### A) P1 Runtime bounds + progression logs
 
-- [ ] Ajouter `--max-runtime-seconds` sur:
-  - [ ] `bsky engage`
-  - [ ] `bsky appreciate`
-  - [ ] `bsky discover follows`
-  - [ ] `bsky discover reposts`
-- [ ] Implémenter un garde-fou temps wall-clock commun (arrêt propre + code retour non-zero en timeout).
-- [ ] Ajouter logs de progression par phase (collect → score → decide → act) en mode non-quiet.
-- [ ] Ajouter tests unitaires/intégration ciblés:
-  - [ ] timeout respecté
-  - [ ] sortie explicite en timeout
-  - [ ] progression visible
-- [ ] Lancer smoke réels (budgets bas) et archiver sorties dans `docs/help-snapshots/`.
+- [x] Ajouter `--max-runtime-seconds` sur:
+  - [x] `bsky engage`
+  - [x] `bsky appreciate`
+  - [x] `bsky discover follows`
+  - [x] `bsky discover reposts`
+- [x] Implémenter un garde-fou temps wall-clock commun (arrêt propre + code retour non-zero en timeout).
+- [x] Ajouter logs de progression par phase (collect → score → decide → act) en mode non-quiet.
+- [x] Ajouter tests unitaires/intégration ciblés:
+  - [x] timeout respecté
+  - [x] sortie explicite en timeout
+  - [x] progression visible
+- [x] Lancer smoke réels (budgets bas) et archiver sorties dans `docs/help-snapshots/`.
 
 ### B) Sweep exhaustif commande par commande
 
