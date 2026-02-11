@@ -686,12 +686,17 @@ Return ONLY valid JSON, no markdown."""
                 content = "\n".join(content.split("\n")[1:-1])
 
             return json.loads(content)
-        except Exception as e:
+        except (requests.ConnectionError, requests.Timeout) as e:
+            # Transient network errors — retry with backoff
             if attempt < max_retries:
-                print(f"⚠️ LLM error (attempt {attempt + 1}/{max_retries + 1}): {e}")
+                print(f"⚠️ LLM transient error (attempt {attempt + 1}/{max_retries + 1}): {e}")
                 sleep(base_backoff * (2 ** attempt))
                 continue
-            print(f"❌ LLM error: {e}")
+            print(f"❌ LLM error after {max_retries + 1} attempts: {e}")
+            return None
+        except Exception as e:
+            # Permanent errors (auth, bad request, JSON parse) — fail immediately
+            print(f"❌ LLM error (non-retryable): {e}")
             return None
 
     return None
