@@ -2,7 +2,7 @@
 
 Complete reference for every command in `bsky-cli`. Each entry documents the command's purpose, all options, example output, and practical usage patterns.
 
-**Version**: 0.12.0  
+**Version**: 1.6.0  
 **Config**: `~/.config/bsky-cli/config.yaml`  
 **Auth**: credentials loaded from `pass` (default path: `api/bsky-echo`). The pass entry must contain `BSKY_HANDLE` (or `BSKY_EMAIL`) and `BSKY_APP_PASSWORD` as key=value lines. Generate an app password at <https://bsky.app/settings/app-passwords>.
 
@@ -68,7 +68,7 @@ bsky
 Create a new post on BlueSky (skeet). Supports plain text, embedded links with previews, and quote posts.
 
 ```
-bsky post [text] [--embed URL] [--quote URL] [--allow-repeat] [--dry-run]
+bsky post <text> [--embed URL] [--quote URL] [--allow-repeat] [--dry-run]
 ```
 
 | Option | Description |
