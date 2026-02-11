@@ -14,6 +14,10 @@ from .auth import get_session, load_from_pass
 from .config import get, get_section
 from .runtime_guard import RuntimeGuard, TIMEOUT_EXIT_CODE, log_phase
 
+
+class DiscoverRuntimeTimeout(Exception):
+    """Raised when discover execution exceeds runtime budget."""
+
 # ============================================================================
 # CONFIGURATION (loaded from ~/.config/bsky-cli/config.yaml)
 # ============================================================================
@@ -260,12 +264,23 @@ def score_candidate(profile: dict, config: dict) -> tuple[float, list[str]]:
 # DISCOVER FOLLOWS
 # ============================================================================
 
-def discover_follows(pds: str, jwt: str, my_did: str, state: dict, 
-                     dry_run: bool = True, max_new: int = 10) -> list[dict]:
+def discover_follows(
+    pds: str,
+    jwt: str,
+    my_did: str,
+    state: dict,
+    dry_run: bool = True,
+    max_new: int = 10,
+    guard: RuntimeGuard | None = None,
+) -> list[dict]:
     """Discover new accounts from follows of follows."""
     config = get_config(state)
     now = dt.datetime.now(dt.timezone.utc)
     cooldown = dt.timedelta(days=config["scan_cooldown_days"])
+
+    def check_runtime(phase: str):
+        if guard and guard.check(phase):
+            raise DiscoverRuntimeTimeout
     
     # Get my follows
     print("📋 Fetching your follows...")
@@ -303,9 +318,10 @@ def discover_follows(pds: str, jwt: str, my_did: str, state: dict,
     candidates = {}  # did -> profile
     
     for i, follow in enumerate(scan_batch):
+        check_runtime("collect")
         handle = follow.get("handle", follow["did"])
         print(f"  Scanning @{handle} ({i+1}/{len(scan_batch)})...")
-        
+
         # Get their follows
         their_follows = get_follows(pds, jwt, follow["did"])
         
@@ -331,6 +347,7 @@ def discover_follows(pds: str, jwt: str, my_did: str, state: dict,
     print("🔍 Scoring candidates...")
     scored = []
     for did, basic_info in list(candidates.items())[:50]:  # Limit API calls
+        check_runtime("score")
         profile = get_profile(pds, jwt, did)
         if not profile:
             continue
@@ -353,6 +370,7 @@ def discover_follows(pds: str, jwt: str, my_did: str, state: dict,
     print(f"\n{'[DRY RUN] ' if dry_run else ''}Top {len(top)} candidates:\n")
     
     for c in top:
+        check_runtime("act")
         print(f"@{c['handle']} ({c['followers']} followers)")
         print(f"  {c['displayName']}")
         print(f"  Score: {c['score']:.1f} — {', '.join(c['reasons'])}")
@@ -374,11 +392,22 @@ def discover_follows(pds: str, jwt: str, my_did: str, state: dict,
 # DISCOVER REPOSTS
 # ============================================================================
 
-def discover_reposts(pds: str, jwt: str, my_did: str, state: dict,
-                     dry_run: bool = True, max_new: int = 10) -> list[dict]:
+def discover_reposts(
+    pds: str,
+    jwt: str,
+    my_did: str,
+    state: dict,
+    dry_run: bool = True,
+    max_new: int = 10,
+    guard: RuntimeGuard | None = None,
+) -> list[dict]:
     """Discover accounts from reposted content."""
     config = get_config(state)
-    
+
+    def check_runtime(phase: str):
+        if guard and guard.check(phase):
+            raise DiscoverRuntimeTimeout
+
     # Get my follows
     print("📋 Fetching your follows...")
     my_follows = get_follows(pds, jwt, my_did)
@@ -397,9 +426,10 @@ def discover_reposts(pds: str, jwt: str, my_did: str, state: dict,
     sample = random.sample(my_follows, min(20, len(my_follows)))
     
     for i, follow in enumerate(sample):
+        check_runtime("collect")
         if i % 10 == 0 and i > 0:
             print(f"  ...checked {i}/{len(sample)}")
-        
+
         feed = get_author_feed(pds, jwt, follow["did"], limit=20)
         for item in feed:
             # Check if it's a repost
@@ -432,6 +462,7 @@ def discover_reposts(pds: str, jwt: str, my_did: str, state: dict,
     # Score and filter
     candidates = []
     for did, repost_count in top_authors[:30]:  # Limit API calls
+        check_runtime("score")
         if did in already:
             continue
         profile = get_profile(pds, jwt, did)
@@ -461,6 +492,7 @@ def discover_reposts(pds: str, jwt: str, my_did: str, state: dict,
     print(f"\n{'[DRY RUN] ' if dry_run else ''}Top {len(top)} from reposts:\n")
     
     for c in top:
+        check_runtime("act")
         print(f"@{c['handle']} ({c['followers']} followers, reposted {c['repost_count']}x)")
         print(f"  {c['displayName']}")
         print(f"  Score: {c['score']:.1f} — {', '.join(c['reasons'])}")
@@ -511,13 +543,32 @@ def run(args) -> int:
     if guard.check("act"):
         return TIMEOUT_EXIT_CODE
 
-    if mode == "follows":
-        results = discover_follows(pds, jwt, did, state, dry_run=dry_run, max_new=max_new)
-    elif mode == "reposts":
-        results = discover_reposts(pds, jwt, did, state, dry_run=dry_run, max_new=max_new)
-    else:
-        print(f"Unknown mode: {mode}")
-        return 1
+    try:
+        if mode == "follows":
+            results = discover_follows(
+                pds,
+                jwt,
+                did,
+                state,
+                dry_run=dry_run,
+                max_new=max_new,
+                guard=guard,
+            )
+        elif mode == "reposts":
+            results = discover_reposts(
+                pds,
+                jwt,
+                did,
+                state,
+                dry_run=dry_run,
+                max_new=max_new,
+                guard=guard,
+            )
+        else:
+            print(f"Unknown mode: {mode}")
+            return 1
+    except DiscoverRuntimeTimeout:
+        return TIMEOUT_EXIT_CODE
     
     if not dry_run:
         save_state(state)

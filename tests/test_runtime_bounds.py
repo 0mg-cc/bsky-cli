@@ -57,3 +57,36 @@ def test_engage_prints_phase_progression(monkeypatch, capsys):
     assert rc == 0
     out = capsys.readouterr().out
     assert "Phase: collect" in out
+
+
+def test_discover_times_out_during_mode_execution(monkeypatch, capsys):
+    class FakeGuard:
+        def __init__(self, _seconds):
+            self.calls = 0
+
+        def check(self, phase):
+            self.calls += 1
+            if self.calls >= 5:
+                print(f"⏱️ Timed out after 30s during phase: {phase}")
+                return True
+            return False
+
+    monkeypatch.setattr(discover, "RuntimeGuard", FakeGuard)
+    monkeypatch.setattr(discover, "get_session", _fake_session)
+    monkeypatch.setattr(
+        discover,
+        "load_state",
+        lambda: {"follows_scanned": {}, "repost_authors": {}, "already_followed": []},
+    )
+    monkeypatch.setattr(
+        discover,
+        "get_follows",
+        lambda _pds, _jwt, _actor, **_kwargs: [{"did": "did:plc:a", "handle": "a.test"}],
+    )
+    monkeypatch.setattr(discover.random, "sample", lambda seq, n: list(seq)[:n])
+
+    rc = discover.run(SimpleNamespace(mode="follows", dry_run=True, max=10, max_runtime_seconds=30))
+
+    assert rc == discover.TIMEOUT_EXIT_CODE
+    out = capsys.readouterr().out
+    assert "Timed out" in out
