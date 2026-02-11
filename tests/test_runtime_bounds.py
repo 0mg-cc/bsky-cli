@@ -262,15 +262,15 @@ def test_discover_reposts_flushes_state_before_timeout(monkeypatch, capsys):
         
         Call sequence with monkeypatched get_follows (no internal guard):
           run() pre-dispatch: collect(1) score(2) decide(3) act(4)
-          discover_reposts loop: pre-check(5) → feed → flush → post-check(6) ← timeout
-        We need check 5 (pre-loop) to pass and check 6 (post-feed) to trip.
+          discover_reposts loop: pre-check(5) → feed → items → flush → post-check(6)
+        Trip on call 6 to exercise exactly the post-feed check path.
         """
         def __init__(self, _seconds=None):
             self.calls = 0
 
         def check(self, phase):
             self.calls += 1
-            if self.calls >= 7:
+            if self.calls >= 6:
                 print(f"⏱️ Timed out after 30s during phase: {phase}")
                 return True
             return False
