@@ -108,7 +108,8 @@ Run `bsky config` to see all available settings with their current values.
 
 ## Usage
 
-> Besoin de l’inventaire complet des commandes/sous-commandes et des `--help` exacts ? Voir `docs/CLI_REFERENCE.md` (référence exhaustive synchronisée avec le CLI).
+> Besoin de l’inventaire complet des commandes/sous-commandes et des `--help` exacts ? Voir `docs/CLI_REFERENCE.md`.
+> Besoin d’un guide humain (workflows concrets + exemples de sorties) ? Voir `docs/USAGE_GUIDE.md`.
 
 ```bash
 # Run via uv
