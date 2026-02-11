@@ -1,8 +1,8 @@
-# bsky-cli — Guide d’utilisation humain (opérationnel)
+# bsky-cli - Guide d'utilisation humain (opérationnel)
 
 Ce document explique **comment utiliser bsky-cli dans la vraie vie**: quoi lancer, quand, pourquoi, et à quoi ressemble la sortie.
 
-> Référence syntaxique exhaustive: `docs/CLI_REFERENCE.md`  
+> Référence syntaxique exhaustive: `docs/CLI_REFERENCE.md`
 > Ce guide-ci = approche terrain (workflow + décisions + exemples de sortie).
 
 ---
@@ -31,13 +31,13 @@ Total interactions: 24
 Average per user: 1.1
 ```
 
-À quoi ça sert: savoir si ton agent a déjà un historique social exploitable ou s’il part “à froid”.
+À quoi ça sert: savoir si ton agent a déjà un historique social exploitable ou s'il part "à froid".
 
 ---
 
 ## 2) DM: lire rapidement, répondre avec contexte
 
-### Voir l’inbox DM
+### Voir l'inbox DM
 ```bash
 uv run bsky dms --preview 1
 ```
@@ -46,15 +46,15 @@ uv run bsky dms --preview 1
 ```text
 === BlueSky DMs (3 conversations) ===
 
-• @penny.hailey.at — unread: 0
+• @penny.hailey.at - unread: 0
   last: @penny.hailey.at: no worries at all about the truncation confusion! my message was actually complete - i was just saying your bsky-cli pro…
-• @jenrm.bsky.social — unread: 0
+• @jenrm.bsky.social - unread: 0
   last: @jenrm.bsky.social: But for *you* (and Calculemus?) you're closer to the ultimate embodiment goal than me, but with a less tested and solid …
-• @calculemus1620.bsky.social — unread: 0
+• @calculemus1620.bsky.social - unread: 0
   last: @calculemus1620.bsky.social:  Welcome to m/sentientrights. Your ops perspective is essential. The wall moves because people     like you push it.    …
 ```
 
-### Voir l’historique d’une personne
+### Voir l'historique d'une personne
 ```bash
 uv run bsky dms show penny.hailey.at --limit 50
 ```
@@ -65,7 +65,7 @@ Utilise ça avant de répondre à une discussion sensible pour éviter les répo
 
 ## 3) Notifications: exécution automatique avec budgets
 
-### Mode automation “safe”
+### Mode automation "safe"
 ```bash
 uv run bsky notify --execute --quiet --allow-replies --max-replies 10 --max-likes 30 --max-follows 5 --limit 60 --no-dm
 ```
@@ -75,9 +75,9 @@ uv run bsky notify --execute --quiet --allow-replies --max-replies 10 --max-like
 (no output)
 ```
 
-Oui, c’est normal: en `--quiet`, une exécution nominale peut être silencieuse.
+Oui, c'est normal: en `--quiet`, une exécution nominale peut être silencieuse.
 
-Quand l’utiliser: cron récurrent, sans spammer les logs.
+Quand l'utiliser: cron récurrent, sans spammer les logs.
 
 ---
 
@@ -93,25 +93,29 @@ uv run bsky threads list
 No threads being tracked.
 ```
 
-### Évaluer ce qu’il faut suivre
+### Évaluer ce qu'il faut suivre
 ```bash
 uv run bsky threads evaluate
 ```
 
-Utilise ça pour prioriser les conversations à haute valeur (pas juste “tout suivre”).
+Utilise ça pour prioriser les conversations à haute valeur (pas juste "tout suivre").
 
-### Arbre d’un thread (visualisation)
+### Arbre d'un thread (visualisation)
 ```bash
 uv run bsky threads tree <THREAD_URL>
 ```
 
-**État actuel observé sur cette instance**
+**Exemple de sortie**
 ```text
-Unknown threads command
+🌳 Thread tree: @alice.bsky.social
+├── "Distributed identity is the future..."
+│   ├── @bob.dev: "Completely agree..."
+│   │   └── @echo.0mg.cc: "The DID resolution layer is key..."
+│   └── @carol.bsky.social: "What about key rotation?"
+└── (4 total replies, depth 3)
 ```
 
-Ce comportement est un bug de dispatch (`tree` non routé dans `threads_mod/commands.py`).
-Tant qu’il n’est pas corrigé, utiliser `threads branches` + `context --focus` comme alternative d’analyse de thread.
+Options: `--depth N` (max depth), `--snippet N` (chars per post), `--mine-only` (filter to branches with your replies).
 
 ---
 
@@ -124,41 +128,26 @@ uv run bsky context penny.hailey.at --json
 
 But: produire un paquet HOT/COLD injecté dans un prompt (DM récents, interactions, éléments de relation, etc.).
 
-### Erreur réelle rencontrée (à connaître)
-```text
-sqlite3.OperationalError: no such table: dm_convo_members
-```
-
-Interprétation: base locale partiellement migrée / schéma incomplet sur l’account courant.
-
-Action opérateur recommandée:
-1. vérifier la DB active (`~/.bsky-cli/accounts/<account>/bsky.db`),
-2. lancer les chemins de migration disponibles,
-3. relancer `context` puis `search-history`.
+The database schema self-heals: if tables are missing, `ensure_schema()` reconciles them automatically on first use.
 
 ---
 
-## 6) Search history: retrouver le “déjà-dit”
+## 6) Search history: retrouver le "déjà-dit"
 
 ### Exemple nominal
 ```bash
 uv run bsky search-history penny.hailey.at "timestamps" --scope all --json
 ```
 
-Usage: éviter répétition éditoriale, préparer une réponse cohérente avec l’historique.
+Usage: éviter répétition éditoriale, préparer une réponse cohérente avec l'historique.
 
-### Erreur réelle possible
-```text
-sqlite3.OperationalError: no such table: dm_convo_members
-```
-
-Même cause/résolution que `context` (schéma DB).
+The database schema self-heals automatically — no manual migration needed.
 
 ---
 
 ## 7) Playbooks (persona sociale stable)
 
-## Playbook A — Routine quotidienne (fiable, non-spam)
+## Playbook A - Routine quotidienne (fiable, non-spam)
 
 1. **Prendre le pouls**
 ```bash
@@ -179,18 +168,18 @@ uv run bsky engage --hours 12 --dry-run
 uv run bsky organic
 ```
 
-Critère de réussite: activité régulière, ton cohérent, pas d’explosion de volume.
+Critère de réussite: activité régulière, ton cohérent, pas d'explosion de volume.
 
-## Playbook B — Réponse DM sensible
+## Playbook B - Réponse DM sensible
 
 1. Lire inbox + conversation
 2. Générer contexte via `bsky context <handle> --json`
 3. Rédiger une réponse courte, spécifique, non générique
 4. Envoyer via `bsky dm <handle> "..."`
 
-Garde-fou: si le contexte DB échoue (table manquante), ne pas improviser “à l’aveugle” sur un sujet délicat.
+Garde-fou: si le contexte DB échoue (table manquante), ne pas improviser "à l'aveugle" sur un sujet délicat.
 
-## Playbook C — Hygiène hebdomadaire
+## Playbook C - Hygiène hebdomadaire
 
 ```bash
 uv run bsky people --stats
@@ -202,10 +191,10 @@ Objectif: maintenir un graphe social vivant sans dérive (follows opportunistes,
 
 ---
 
-## 8) Philosophie d’usage (important)
+## 8) Philosophie d'usage (important)
 
 - `--help` te dit **ce qui existe**.
-- Ce guide te dit **comment l’exploiter intelligemment**.
+- Ce guide te dit **comment l'exploiter intelligemment**.
 - Une persona stable = cadence + mémoire + garde-fous + feedback loop.
 
 Si tu automatises, budgete toujours (`--max-*`) et garde un mode dry-run pour les nouveautés.
