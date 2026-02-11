@@ -102,13 +102,13 @@ Pour chaque commande réparée puis pour toutes les autres:
 
 ## Ordre d'exécution
 
-1. Fix P0 `threads tree` + tests internes + test réel
-2. Fix P0 `context` + `search-history` (schema/migration) + tests internes + tests réels
-3. Implémentation P1 (bornes runtime + logs progression)
-4. Sweep exhaustif toutes commandes (internes + réelles)
-5. PRs/fixes complémentaires issus du sweep
-6. Deuxième sweep complet de confirmation
-7. Mise à jour doc utilisateur avec outputs réels validés
+1. ✅ Fix P0 `threads tree` + tests internes + test réel
+2. ✅ Fix P0 `context` + `search-history` (schema/migration) + tests internes + tests réels
+3. ✅ Implémentation P1 (bornes runtime + logs progression) - PR #16 merged
+4. ✅ Sweep exhaustif toutes commandes (internes + réelles) - PR #18 merged
+5. ✅ PRs/fixes complémentaires issus du sweep - bookmark API, handle crash, pagination timeout
+6. ⏳ Deuxième sweep complet de confirmation
+7. ⏳ Mise à jour doc utilisateur avec outputs réels validés
 
 ---
 
@@ -141,10 +141,11 @@ Pour chaque commande réparée puis pour toutes les autres:
   - ✅ state persistence on timeout (engage/appreciate/discover) - PR #16 merged
   - ✅ organic LLM retry limité aux erreurs transientes (429, ConnectionError, Timeout) - PR #17 merged
   - ✅ smoke réels (budget timeout minimal) archivés dans `docs/help-snapshots/`
-- 🔄 Sweep exhaustif commande par commande - PR #18 ouverte
+- ✅ Sweep exhaustif commande par commande — PR #18 mergée
   - 26 commandes testées (nominal/edge/error)
   - 3 bugs trouvés et corrigés: bookmark API, context/search-history crash, discover pagination timeout
   - docs/sweep-2026-02-11.md (journal complet)
+- ⏳ Deuxième sweep de confirmation + investigation SIGKILL appreciate
 
 ## Plan d'action immédiat (actionnable)
 
@@ -182,15 +183,17 @@ Pour chaque commande réparée puis pour toutes les autres:
 - [x] Ouvrir PR organic retry → PR #17 mergée
 - [x] Review inline + corrections → retry scope limited to 429/transient
 - [x] Merge → squash merged
-- [x] Ouvrir PR sweep → PR #18 ouverte
-- [ ] Review inline + corrections
-- [ ] Merge
+- [x] Ouvrir PR sweep → PR #18 mergée
+- [x] Review inline + corrections → 0 inline comments, clean merge
+- [x] Merge → squash merged
 
 ### D) Finalisation plan
 
-- [ ] Cocher tous items restants dans ce PLAN
-- [ ] Mettre à jour `TODAY_TASKS.md` (fait/en cours/next)
+- [x] Cocher tous items restants dans ce PLAN
+- [x] Mettre à jour `TODAY_TASKS.md` (fait/en cours/next)
 - [ ] Vérifier DoD: plan entièrement accompli + docs synchronisées
+- [ ] Deuxième sweep de confirmation (rapide, spot-check)
+- [ ] Investiguer SIGKILL `bsky appreciate` (collect long / interruption avant résultats)
 
 ## Critère de fin
 
