@@ -1,0 +1,11 @@
+usage: bsky bookmarks [-h] {list} ...
+
+positional arguments:
+  {list}
+    list      List bookmarks
+
+options:
+  -h, --help  show this help message and exit
+
+EXAMPLE:
+  bsky bookmarks list

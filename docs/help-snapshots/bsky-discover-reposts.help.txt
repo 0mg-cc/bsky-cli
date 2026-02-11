@@ -1,0 +1,21 @@
+usage: bsky discover [-h] [--dry-run] [--execute] [--max MAX]
+                     {follows,reposts}
+
+positional arguments:
+  {follows,reposts}  Discovery mode
+
+options:
+  -h, --help         show this help message and exit
+  --dry-run          Preview without following
+  --execute          Actually follow accounts
+  --max MAX          Max accounts to follow
+
+EXAMPLES:
+  bsky discover follows            # Find via mutual follows (dry-run)
+  bsky discover reposts            # Find via reposts (dry-run)
+  bsky discover follows --execute  # Actually follow suggested accounts
+  bsky discover follows --max 5    # Limit to 5 suggestions
+
+MODES:
+  follows  - Accounts followed by people you follow
+  reposts  - Accounts whose content gets reposted by your follows

@@ -1,0 +1,9 @@
+usage: bsky dms show [-h] [--json] [--limit LIMIT] handle
+
+positional arguments:
+  handle         Other participant handle
+
+options:
+  -h, --help     show this help message and exit
+  --json         Output JSON
+  --limit LIMIT  Messages to fetch

@@ -1,0 +1,7 @@
+usage: bsky lists show [-h] list_name
+
+positional arguments:
+  list_name   List name
+
+options:
+  -h, --help  show this help message and exit

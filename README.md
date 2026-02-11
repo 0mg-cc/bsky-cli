@@ -108,6 +108,8 @@ Run `bsky config` to see all available settings with their current values.
 
 ## Usage
 
+> Besoin de l’inventaire complet des commandes/sous-commandes et des `--help` exacts ? Voir `docs/CLI_REFERENCE.md` (référence exhaustive synchronisée avec le CLI).
+
 ```bash
 # Run via uv
 uv run bsky <command>
@@ -331,8 +333,8 @@ The CLI stores state in your home directory:
 - `~/.bsky-cli/state.json` — Replied posts, daily limits
 - `~/.bsky-cli/conversations.json` — Conversation tracking
 - `~/.bsky-cli/discover_state.json` — Discovery history
-- `~/.bsky-cli/accounts/<account>/bsky.db` — Context/memory SQLite (per-account)
-- Thread state location is configurable (default: `~/personas/echo/data/bsky-threads-state.json`)
+- `~/.bsky-cli/accounts/<account>/bsky.db` — Context/memory SQLite (per-account, including thread watch/backoff/mod state)
+- Legacy JSON thread-state migration is available via `bsky threads migrate-state`
 
 ## Use with Cron/Automation
 

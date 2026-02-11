@@ -1,0 +1,12 @@
+usage: bsky threads tree [-h] [--depth DEPTH] [--snippet SNIPPET]
+                         [--mine-only]
+                         target
+
+positional arguments:
+  target             Thread URL or at:// URI
+
+options:
+  -h, --help         show this help message and exit
+  --depth DEPTH      Max depth (default: 6)
+  --snippet SNIPPET  Snippet length per post (default: 90)
+  --mine-only        Only show branches that include our DID

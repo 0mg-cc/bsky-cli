@@ -1,0 +1,5 @@
+usage: bsky bookmarks list [-h] [--limit LIMIT]
+
+options:
+  -h, --help     show this help message and exit
+  --limit LIMIT  Max bookmarks to fetch

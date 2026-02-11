@@ -1,0 +1,9 @@
+usage: bsky lists create [-h] [--description DESCRIPTION] name
+
+positional arguments:
+  name                  List name
+
+options:
+  -h, --help            show this help message and exit
+  --description DESCRIPTION
+                        List description

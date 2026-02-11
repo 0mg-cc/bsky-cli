@@ -1,0 +1,8 @@
+usage: bsky lists add [-h] list_name handle
+
+positional arguments:
+  list_name   List name
+  handle      Account handle (with or without @)
+
+options:
+  -h, --help  show this help message and exit

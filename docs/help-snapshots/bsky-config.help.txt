@@ -1,0 +1,18 @@
+usage: bsky config [-h] [--init] [--path] [--force]
+
+options:
+  -h, --help  show this help message and exit
+  --init      Create config file with example settings
+  --path      Show config file path
+  --force     Overwrite existing config (with --init)
+
+EXAMPLES:
+  bsky config                     # Show current config
+  bsky config --init              # Create config file with defaults
+  bsky config --path              # Show config file path
+
+CONFIG LOCATION:
+  ~/.config/bsky-cli/config.yaml
+
+All settings are optional - defaults work out of the box.
+Edit the config file to customize behavior.

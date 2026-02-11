@@ -1,0 +1,8 @@
+usage: bsky threads backoff-update [-h] [--activity] target
+
+positional arguments:
+  target      Thread URL, URI, or root author handle
+
+options:
+  -h, --help  show this help message and exit
+  --activity  New activity was found (resets backoff)

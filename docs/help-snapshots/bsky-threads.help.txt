@@ -1,0 +1,35 @@
+usage: bsky threads [-h]
+                    {evaluate,list,watch,unwatch,branches,tree,backoff-check,backoff-update} ...
+
+positional arguments:
+  {evaluate,list,watch,unwatch,branches,tree,backoff-check,backoff-update}
+    evaluate            Evaluate notifications for thread importance
+    list                List tracked threads
+    watch               Start watching a specific thread
+    unwatch             Stop watching a thread
+    branches            Check branch relevance for a thread
+    tree                Print a visual ASCII tree for a thread
+    backoff-check       Check if thread check is due (for cron)
+    backoff-update      Update backoff state after check
+
+options:
+  -h, --help            show this help message and exit
+
+SUBCOMMANDS:
+  evaluate      Score notifications for thread importance
+  list          List all tracked threads
+  watch         Start watching a thread
+  unwatch       Stop watching a thread
+  branches      Check branch relevance in a thread
+  tree          Print a visual ASCII tree of a thread (human-friendly)
+  backoff-check Check if monitoring is due (for cron)
+  backoff-update Update backoff after check
+
+EXAMPLES:
+  bsky threads evaluate
+  bsky threads watch "https://bsky.app/profile/user/post/abc"
+  bsky threads branches user.bsky.social
+  bsky threads backoff-update user --activity
+
+BACKOFF INTERVALS:
+  10min → 20min → 40min → 80min → 160min → 240min → 18h (final)

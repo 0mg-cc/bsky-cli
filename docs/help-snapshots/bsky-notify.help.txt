@@ -1,0 +1,30 @@
+usage: bsky notify [-h] [--all] [--json] [--mark-read] [--limit LIMIT]
+                   [--no-dm] [--score] [--execute] [--max-replies MAX_REPLIES]
+                   [--max-likes MAX_LIKES] [--max-follows MAX_FOLLOWS]
+                   [--allow-replies] [--quiet]
+
+options:
+  -h, --help            show this help message and exit
+  --all                 Show all recent, not just new
+  --json                Output raw JSON
+  --mark-read           Mark as read on BlueSky
+  --limit LIMIT         Number to fetch (default: 50)
+  --no-dm               Skip DM check
+  --score               Score notifications and propose actions
+  --execute             Execute decided actions (likes/follows; replies
+                        optional)
+  --max-replies MAX_REPLIES
+                        Reply budget per run (default 10)
+  --max-likes MAX_LIKES
+                        Like budget per run (default 30)
+  --max-follows MAX_FOLLOWS
+                        Follow budget per run (default 20)
+  --allow-replies       Allow auto-replies when executing
+  --quiet               Suppress output unless there is an error or budgets
+                        are hit
+
+EXAMPLES:
+  bsky notify                  # New notifications only
+  bsky notify --all            # All recent notifications
+  bsky notify --json           # Raw JSON output
+  bsky notify --mark-read      # Mark as read after viewing

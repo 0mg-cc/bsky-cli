@@ -1,0 +1,7 @@
+usage: bsky threads unwatch [-h] target
+
+positional arguments:
+  target      Thread URL, URI, or interlocutor handle
+
+options:
+  -h, --help  show this help message and exit

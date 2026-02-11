@@ -1,0 +1,9 @@
+usage: bsky threads watch [-h] [--silence-hours SILENCE_HOURS] url
+
+positional arguments:
+  url                   URL of the thread to watch
+
+options:
+  -h, --help            show this help message and exit
+  --silence-hours SILENCE_HOURS
+                        Hours of silence before cron disables (default: 18)

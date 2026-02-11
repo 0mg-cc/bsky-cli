@@ -1,0 +1,33 @@
+usage: bsky people [-h] [--regulars] [--stats] [--limit LIMIT]
+                   [--set-note SET_NOTE] [--add-tag ADD_TAG]
+                   [--remove-tag REMOVE_TAG] [--enrich] [--execute] [--force]
+                   [--min-age-hours MIN_AGE_HOURS]
+                   [handle]
+
+positional arguments:
+  handle                Handle/DID to look up
+
+options:
+  -h, --help            show this help message and exit
+  --regulars            Show regulars only
+  --stats               Show statistics
+  --limit LIMIT         Max users to show (default: 20)
+  --set-note SET_NOTE   Set a manual note for this person
+  --add-tag ADD_TAG     Add a tag (repeatable)
+  --remove-tag REMOVE_TAG
+                        Remove a tag (repeatable)
+  --enrich              Generate/update auto notes (dry-run by default)
+  --execute             Persist enrich output to DB
+  --force               Ignore enrich cooldown
+  --min-age-hours MIN_AGE_HOURS
+                        Min hours between enrich runs (default: 72)
+
+EXAMPLES:
+  bsky people                      # List all known interlocutors
+  bsky people --regulars           # List regulars only (3+ interactions)
+  bsky people @user.bsky.social    # Show history with specific user
+  bsky people --stats              # Show statistics
+
+BADGES IN NOTIFICATIONS:
+  🔄 = regular (3+ interactions)
+  🆕 = first contact

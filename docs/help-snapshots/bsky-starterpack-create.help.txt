@@ -1,0 +1,12 @@
+usage: bsky starterpack create [-h] --list LIST_NAME
+                               [--description DESCRIPTION]
+                               name
+
+positional arguments:
+  name                  Starter pack name
+
+options:
+  -h, --help            show this help message and exit
+  --list LIST_NAME      Existing list name
+  --description DESCRIPTION
+                        Starter pack description

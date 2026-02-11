@@ -1,0 +1,9 @@
+usage: bsky starterpack [-h] {list,create} ...
+
+positional arguments:
+  {list,create}
+    list         List starter packs
+    create       Create a starter pack from a list
+
+options:
+  -h, --help     show this help message and exit

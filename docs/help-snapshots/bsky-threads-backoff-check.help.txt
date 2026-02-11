@@ -1,0 +1,7 @@
+usage: bsky threads backoff-check [-h] target
+
+positional arguments:
+  target      Thread URL, URI, or root author handle
+
+options:
+  -h, --help  show this help message and exit

@@ -1,0 +1,11 @@
+usage: bsky lists [-h] {list,create,add,show} ...
+
+positional arguments:
+  {list,create,add,show}
+    list                List your lists
+    create              Create a list
+    add                 Add account to a list
+    show                Show list members
+
+options:
+  -h, --help            show this help message and exit

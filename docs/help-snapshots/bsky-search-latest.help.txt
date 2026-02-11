@@ -1,0 +1,25 @@
+usage: bsky search [-h] [--author AUTHOR] [--since SINCE] [--until UNTIL]
+                   [--limit LIMIT] [--sort {latest,top}] [--compact]
+                   query
+
+positional arguments:
+  query                Search query
+
+options:
+  -h, --help           show this help message and exit
+  --author, -a AUTHOR  Filter by author handle or DID
+  --since, -s SINCE    Posts after this time (e.g. 24h, 7d)
+  --until, -u UNTIL    Posts before this time
+  --limit, -n LIMIT    Max results (default: 25)
+  --sort {latest,top}  Sort order (default: latest)
+  --compact, -c        Compact output (no metrics)
+
+EXAMPLES:
+  bsky search "AI agents"
+  bsky search --author user.bsky.social "topic"
+  bsky search --since 24h "breaking news"
+  bsky search --sort top --limit 10 "viral"
+
+TIME FORMATS:
+  Relative: 24h, 7d, 2w, 30m
+  Absolute: 2026-02-04T00:00:00Z

@@ -1,0 +1,17 @@
+usage: bsky engage [-h] [--dry-run] [--hours HOURS]
+
+options:
+  -h, --help     show this help message and exit
+  --dry-run      Preview without posting
+  --hours HOURS  Look back N hours (default: 12)
+
+EXAMPLES:
+  bsky engage                  # Engage with posts from last 12h
+  bsky engage --hours 24       # Look back 24 hours
+  bsky engage --dry-run        # Preview without posting
+
+HOW IT WORKS:
+  1. Fetches recent posts from accounts you follow
+  2. Filters by quality (engagement, recency, conversation potential)
+  3. Uses LLM to select posts and craft thoughtful replies
+  4. Tracks conversations for follow-up

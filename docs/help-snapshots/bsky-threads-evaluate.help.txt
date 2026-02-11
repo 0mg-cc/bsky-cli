@@ -1,0 +1,9 @@
+usage: bsky threads evaluate [-h] [--limit LIMIT] [--json]
+                             [--silence-hours SILENCE_HOURS]
+
+options:
+  -h, --help            show this help message and exit
+  --limit LIMIT         Notifications to check (default: 50)
+  --json                Output cron configs as JSON
+  --silence-hours SILENCE_HOURS
+                        Hours of silence before cron disables (default: 18)

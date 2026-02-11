@@ -1,0 +1,19 @@
+usage: bsky post [-h] [--embed URL] [--quote URL] [--allow-repeat] [--dry-run]
+                 [text]
+
+positional arguments:
+  text             Post text (max 300 chars)
+
+options:
+  -h, --help       show this help message and exit
+  --embed URL      URL to embed with link preview
+  --quote, -q URL  Quote post URL
+  --allow-repeat   Allow posting even if it looks similar to one of the last
+                   10 posts
+  --dry-run        Print without posting
+
+EXAMPLES:
+  bsky post "Hello, BlueSky!"
+  bsky post --embed https://example.com "Check this out"
+  bsky post --quote "https://bsky.app/profile/user/post/abc" "So true!"
+  bsky post --dry-run "Test message"
