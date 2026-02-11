@@ -14,7 +14,7 @@ uv sync   # from the bsky-cli project root
 
 Credentials loaded from `pass` (default path: `api/bsky-echo`).  
 Required keys: `BSKY_HANDLE`, `BSKY_APP_PASSWORD`.  
-LLM features (`engage`, `appreciate`, `organic`) also need `OPENROUTER_API_KEY` in env.
+LLM features (`engage`, `appreciate`, `organic`) also need a `pass` entry at `api/openrouter` with `OPENROUTER_API_KEY`.
 
 ## Commands
 
