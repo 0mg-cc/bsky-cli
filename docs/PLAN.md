@@ -107,8 +107,9 @@ Pour chaque commande réparée puis pour toutes les autres:
 3. ✅ Implémentation P1 (bornes runtime + logs progression) - PR #16 merged
 4. ✅ Sweep exhaustif toutes commandes (internes + réelles) - PR #18 merged
 5. ✅ PRs/fixes complémentaires issus du sweep - bookmark API, handle crash, pagination timeout
-6. ⏳ Deuxième sweep complet de confirmation
-7. ⏳ Mise à jour doc utilisateur avec outputs réels validés
+6. ✅ Deuxième sweep de confirmation - spot-check validé (`docs/help-snapshots/spot-check-2026-02-11-1751.md`)
+7. ✅ Documentation exhaustive réécrite - PR #20 merged (CLI_REFERENCE.md + USAGE_GUIDE.md)
+8. ✅ README + skill réécrits - PR #21 merged
 
 ---
 
@@ -145,7 +146,10 @@ Pour chaque commande réparée puis pour toutes les autres:
   - 26 commandes testées (nominal/edge/error)
   - 3 bugs trouvés et corrigés: bookmark API, context/search-history crash, discover pagination timeout
   - docs/sweep-2026-02-11.md (journal complet)
-- ⏳ Deuxième sweep de confirmation + investigation SIGKILL appreciate
+- ✅ Deuxième sweep de confirmation exécuté (`docs/help-snapshots/spot-check-2026-02-11-1751.md`)
+- ✅ SIGKILL appreciate résolu (cron runtime bounds `--max-runtime-seconds 120`)
+- ✅ Documentation exhaustive réécrite en anglais - PR #20 merged
+- ✅ README rewrite + skill update - PR #21 merged
 
 ## Plan d'action immédiat (actionnable)
 
@@ -191,15 +195,28 @@ Pour chaque commande réparée puis pour toutes les autres:
 
 - [x] Cocher tous items restants dans ce PLAN
 - [x] Mettre à jour `TODAY_TASKS.md` (fait/en cours/next)
-- [ ] Vérifier DoD: plan entièrement accompli + docs synchronisées
-- [ ] Deuxième sweep de confirmation (rapide, spot-check)
-- [ ] Investiguer SIGKILL `bsky appreciate` (collect long / interruption avant résultats)
+- [x] Vérifier DoD: plan entièrement accompli + docs synchronisées
+- [x] Deuxième sweep de confirmation (rapide, spot-check) — `docs/help-snapshots/spot-check-2026-02-11-1751.md`
+- [x] Investiguer SIGKILL `bsky appreciate` — résolu: `--max-runtime-seconds 120` ajouté aux crons
 
 ## Critère de fin
 
 Plan terminé quand:
 
-- P0 corrigés,
-- tests exhaustifs passés,
-- tests réels exécutés sur toutes commandes,
-- documentation synchronisée avec le comportement réel du CLI.
+- ✅ P0 corrigés (threads tree, context/search-history DB)
+- ✅ Tests exhaustifs passés (229/229)
+- ✅ Tests réels exécutés sur toutes commandes (sweep + spot-check)
+- ✅ Documentation synchronisée (CLI_REFERENCE.md, USAGE_GUIDE.md, README.md, skill/SKILL.md)
+
+**🎉 PLAN 100% ACCOMPLI — 2026-02-11**
+
+### Résumé des PRs mergées
+
+| PR | Description |
+|----|-------------|
+| #16 | Runtime bounds + state persistence + phase logs + 8 tests |
+| #17 | Organic LLM retry limited to 429 + transient network errors |
+| #18 | Sweep fixes: bookmark API, context crash, discover pagination |
+| #19 | Discover post-loop timeout (repost_authors flush) |
+| #20 | Exhaustive CLI reference rewrite (English, 1100+ lines) |
+| #21 | README rewrite + skill update |
