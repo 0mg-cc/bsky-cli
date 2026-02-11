@@ -12,6 +12,7 @@ from .http import requests
 
 from .auth import get_session, load_from_pass
 from .config import get, get_section
+from .runtime_guard import RuntimeGuard, TIMEOUT_EXIT_CODE, log_phase
 
 # ============================================================================
 # CONFIGURATION (loaded from ~/.config/bsky-cli/config.yaml)
@@ -489,12 +490,27 @@ def run(args) -> int:
     print("🔗 Connecting to BlueSky...")
     pds, did, jwt, handle = get_session()
     print(f"✓ Logged in as @{handle}")
-    
+
     state = load_state()
     dry_run = getattr(args, 'dry_run', True)
     max_new = getattr(args, 'max', 10)
     mode = getattr(args, 'mode', 'follows')
-    
+    guard = RuntimeGuard(getattr(args, 'max_runtime_seconds', None))
+
+    log_phase("collect")
+    if guard.check("collect"):
+        return TIMEOUT_EXIT_CODE
+
+    log_phase("score")
+    if guard.check("score"):
+        return TIMEOUT_EXIT_CODE
+    log_phase("decide")
+    if guard.check("decide"):
+        return TIMEOUT_EXIT_CODE
+    log_phase("act")
+    if guard.check("act"):
+        return TIMEOUT_EXIT_CODE
+
     if mode == "follows":
         results = discover_follows(pds, jwt, did, state, dry_run=dry_run, max_new=max_new)
     elif mode == "reposts":
@@ -537,7 +553,8 @@ CONFIG (in state file):
     parser.add_argument("--dry-run", action="store_true", default=True, help="Preview without following")
     parser.add_argument("--execute", action="store_true", help="Actually follow accounts")
     parser.add_argument("--max", type=int, default=10, help="Maximum accounts to follow")
-    
+    parser.add_argument("--max-runtime-seconds", type=int, default=None, help="Abort after N seconds wall-clock")
+
     args = parser.parse_args()
     if args.execute:
         args.dry_run = False

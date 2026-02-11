@@ -1,0 +1,2 @@
+$ bsky engage --dry-run --hours 2 --max-runtime-seconds 45
+[interrompu manuellement pendant un run antérieur; remplacé par smoke timeout déterministe dans p1-smoke-engage-timeout-2026-02-11.txt]

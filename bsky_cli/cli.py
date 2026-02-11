@@ -289,6 +289,7 @@ HOW IT WORKS:
     )
     engage_parser.add_argument("--dry-run", action="store_true", help="Preview without posting")
     engage_parser.add_argument("--hours", type=int, default=12, help="Look back N hours (default: 12)")
+    engage_parser.add_argument("--max-runtime-seconds", type=int, default=None, help="Abort after N seconds wall-clock")
 
     # appreciate
     appreciate_parser = subparsers.add_parser(
@@ -311,6 +312,7 @@ PROBABILISTIC BEHAVIOR:
     appreciate_parser.add_argument("--dry-run", action="store_true", help="Preview without acting")
     appreciate_parser.add_argument("--hours", type=int, default=12, help="Look back N hours (default: 12)")
     appreciate_parser.add_argument("--max", type=int, default=5, help="Max posts to select (default: 5)")
+    appreciate_parser.add_argument("--max-runtime-seconds", type=int, default=None, help="Abort after N seconds wall-clock")
 
     # discover
     discover_parser = subparsers.add_parser(
@@ -332,6 +334,7 @@ MODES:
     discover_parser.add_argument("--dry-run", action="store_true", default=True, help="Preview without following")
     discover_parser.add_argument("--execute", action="store_true", help="Actually follow accounts")
     discover_parser.add_argument("--max", type=int, default=10, help="Max accounts to follow")
+    discover_parser.add_argument("--max-runtime-seconds", type=int, default=None, help="Abort after N seconds wall-clock")
 
     # follow
     follow_parser = subparsers.add_parser(
