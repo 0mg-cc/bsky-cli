@@ -104,12 +104,11 @@ Pour chaque commande réparée puis pour toutes les autres:
 
 1. Fix P0 `threads tree` + tests internes + test réel
 2. Fix P0 `context` + `search-history` (schema/migration) + tests internes + tests réels
-3. Implémentation de P1
-3. Sweep exhaustif toutes commandes (internes + réelles)
-4. PRs et Fixes complémentaires issus du sweep
-5. implémentation des PRs issues du sweep
-5. Deuxième sweep complet de confirmation
-6. Mise à jour doc utilisateur avec outputs réels validés
+3. Implémentation P1 (bornes runtime + logs progression)
+4. Sweep exhaustif toutes commandes (internes + réelles)
+5. PRs/fixes complémentaires issus du sweep
+6. Deuxième sweep complet de confirmation
+7. Mise à jour doc utilisateur avec outputs réels validés
 
 ---
 
@@ -136,6 +135,49 @@ Pour chaque commande réparée puis pour toutes les autres:
 
 - ⏳ P1 robustesse runtime (`engage` / `appreciate` / `discover`) à faire
 - ⏳ Sweep exhaustif commande par commande à faire
+
+## Plan d’action immédiat (actionnable)
+
+### A) P1 Runtime bounds + progression logs
+
+- [ ] Ajouter `--max-runtime-seconds` sur:
+  - [ ] `bsky engage`
+  - [ ] `bsky appreciate`
+  - [ ] `bsky discover follows`
+  - [ ] `bsky discover reposts`
+- [ ] Implémenter un garde-fou temps wall-clock commun (arrêt propre + code retour non-zero en timeout).
+- [ ] Ajouter logs de progression par phase (collect → score → decide → act) en mode non-quiet.
+- [ ] Ajouter tests unitaires/intégration ciblés:
+  - [ ] timeout respecté
+  - [ ] sortie explicite en timeout
+  - [ ] progression visible
+- [ ] Lancer smoke réels (budgets bas) et archiver sorties dans `docs/help-snapshots/`.
+
+### B) Sweep exhaustif commande par commande
+
+- [ ] Générer la liste complète des commandes via `bsky --help` + sous-commandes.
+- [ ] Exécuter pour chaque commande:
+  - [ ] cas nominal
+  - [ ] cas limite
+  - [ ] cas erreur
+- [ ] Capturer pour chaque run: commande, code retour, extrait output.
+- [ ] Produire un journal consolidé dans `docs/CLI_REFERENCE.md` (section validation réelle).
+
+### C) PR/merge loop (jusqu’à completion)
+
+- [ ] Ouvrir PR P1 runtime
+- [ ] Review inline + corrections
+- [ ] Re-run tests + smoke
+- [ ] Merge
+- [ ] Ouvrir PR sweep/doc sync
+- [ ] Review inline + corrections
+- [ ] Merge
+
+### D) Finalisation plan
+
+- [ ] Cocher tous items restants dans ce PLAN
+- [ ] Mettre à jour `TODAY_TASKS.md` (fait/en cours/next)
+- [ ] Vérifier DoD: plan entièrement accompli + docs synchronisées
 
 ## Critère de fin
 
