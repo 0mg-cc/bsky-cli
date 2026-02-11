@@ -443,9 +443,6 @@ def discover_reposts(
             print(f"  ...checked {i}/{len(sample)}")
 
         feed = get_author_feed(pds, jwt, follow["did"], limit=20)
-        # If the feed call itself overruns the budget, catch it here before we
-        # can incorrectly return success on empty scans (Codex inline review on PR #16).
-        check_runtime("collect")
         for item in feed:
             # Check if it's a repost
             reason = item.get("reason", {})
@@ -456,6 +453,14 @@ def discover_reposts(
                 author_did = author.get("did", "")
                 if author_did and author_did not in already:
                     repost_authors[author_did] += 1
+        # Flush accumulated repost counts into state after processing this
+        # follow's feed, so if the post-check raises DiscoverRuntimeTimeout
+        # the "partial state saved" path preserves all progress so far
+        # (Codex P2 on PR #19).
+        state["repost_authors"] = dict(repost_authors)
+        # If the feed call itself overruns the budget, catch it here before we
+        # can incorrectly return success on empty scans (Codex inline on PR #16).
+        check_runtime("collect")
     
     # Update state
     state["repost_authors"] = dict(repost_authors)

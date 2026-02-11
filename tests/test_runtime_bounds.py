@@ -246,3 +246,66 @@ def test_discover_saves_state_on_timeout(monkeypatch, capsys):
     assert rc == discover.TIMEOUT_EXIT_CODE
     assert saved["state"], "discover must save state on timeout"
     assert "partial state saved" in capsys.readouterr().out.lower()
+
+
+def test_discover_reposts_flushes_state_before_timeout(monkeypatch, capsys):
+    """Codex P2 on PR #19: repost_authors must be flushed into state before
+    check_runtime can raise, so partial progress is saved on timeout."""
+    saved = {"state": None}
+
+    def fake_save_state(s):
+        saved["state"] = dict(s)
+
+    class RepostTimeoutGuard:
+        """Pass pre-dispatch checks in run(), then timeout on the post-feed
+        check_runtime inside discover_reposts (after get_author_feed).
+        
+        Call sequence with monkeypatched get_follows (no internal guard):
+          run() pre-dispatch: collect(1) score(2) decide(3) act(4)
+          discover_reposts loop: pre-check(5) → feed → flush → post-check(6) ← timeout
+        We need check 5 (pre-loop) to pass and check 6 (post-feed) to trip.
+        """
+        def __init__(self, _seconds=None):
+            self.calls = 0
+
+        def check(self, phase):
+            self.calls += 1
+            if self.calls >= 7:
+                print(f"⏱️ Timed out after 30s during phase: {phase}")
+                return True
+            return False
+
+    monkeypatch.setattr(discover, "RuntimeGuard", RepostTimeoutGuard)
+    monkeypatch.setattr(discover, "get_session", _fake_session)
+    monkeypatch.setattr(
+        discover,
+        "load_state",
+        lambda: {"follows_scanned": {}, "repost_authors": {}, "already_followed": []},
+    )
+    monkeypatch.setattr(
+        discover,
+        "get_follows",
+        lambda _pds, _jwt, _actor, **_kw: [
+            {"did": "did:plc:a", "handle": "a.test"},
+        ],
+    )
+    # Feed with a repost so repost_authors gets populated
+    monkeypatch.setattr(
+        discover,
+        "get_author_feed",
+        lambda _pds, _jwt, _actor, **_kw: [
+            {
+                "reason": {"$type": "app.bsky.feed.defs#reasonRepost"},
+                "post": {"author": {"did": "did:plc:reposted", "handle": "rp.test"}},
+            }
+        ],
+    )
+    monkeypatch.setattr(discover.random, "sample", lambda seq, n: list(seq)[:n])
+    monkeypatch.setattr(discover, "save_state", fake_save_state)
+
+    rc = discover.run(SimpleNamespace(mode="reposts", dry_run=False, max=10, max_runtime_seconds=30))
+
+    assert rc == discover.TIMEOUT_EXIT_CODE
+    assert saved["state"] is not None, "state must be saved on timeout"
+    assert "did:plc:reposted" in saved["state"].get("repost_authors", {}), \
+        "repost_authors accumulated before timeout must be persisted"
