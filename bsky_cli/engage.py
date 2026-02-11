@@ -777,10 +777,18 @@ def run(args) -> int:
 
     log_phase("act")
     if guard.check("act"):
+        if not dry_run:
+            save_state(state)
+            save_conversations(conversations)
+            print("⏱️ Timeout — partial state saved.")
         return TIMEOUT_EXIT_CODE
 
     for sel in selections:
         if guard.check("act"):
+            if not dry_run:
+                save_state(state)
+                save_conversations(conversations)
+                print("⏱️ Timeout — partial state saved.")
             return TIMEOUT_EXIT_CODE
         print(f"@{sel['author_handle']}:")
         print(f"  Reason: {sel.get('reason', 'N/A')}")

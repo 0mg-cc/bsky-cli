@@ -568,6 +568,8 @@ def run(args) -> int:
             print(f"Unknown mode: {mode}")
             return 1
     except DiscoverRuntimeTimeout:
+        save_state(state)
+        print("⏱️ Timeout — partial state saved.")
         return TIMEOUT_EXIT_CODE
     
     if not dry_run:

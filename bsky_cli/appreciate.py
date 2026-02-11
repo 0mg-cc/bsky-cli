@@ -397,6 +397,9 @@ def run(args) -> int:
 
     log_phase("act")
     if guard.check("act"):
+        if not dry_run:
+            save_state(state)
+            print("⏱️ Timeout — partial state saved.")
         return TIMEOUT_EXIT_CODE
 
     likes = 0
@@ -406,6 +409,9 @@ def run(args) -> int:
     
     for sel in selections:
         if guard.check("act"):
+            if not dry_run:
+                save_state(state)
+                print("⏱️ Timeout — partial state saved.")
             return TIMEOUT_EXIT_CODE
         action = sel["action"]
         
