@@ -3,7 +3,9 @@
 Objectif: corriger les bugs bloquants observés en conditions réelles et valider le CLI de façon exhaustive, avec sorties réelles.
 
 ## Portée
+
 Ce plan couvre **uniquement**:
+
 1) correction des bugs identifiés,
 2) tests exhaustifs commande par commande,
 3) validation en conditions réelles (pas seulement tests internes).
@@ -13,6 +15,7 @@ Ce plan couvre **uniquement**:
 ## Priorités bugs
 
 ## P0 — `threads tree` cassé
+
 - Symptôme: `Unknown threads command`
 - Cause probable: dispatch manquant dans `threads_mod/commands.py::run()`.
 - Action:
@@ -23,6 +26,7 @@ Ce plan couvre **uniquement**:
   - la commande retourne un arbre (ou une erreur métier explicite), jamais `Unknown threads command`.
 
 ## P0 — `context` crash DB (`dm_convo_members`)
+
 - Symptôme: `sqlite3.OperationalError: no such table: dm_convo_members`
 - Cause probable: schéma account DB partiellement migré.
 - Action:
@@ -34,6 +38,7 @@ Ce plan couvre **uniquement**:
   - pas de crash SQL; sortie valide (données ou résultat vide cohérent).
 
 ## P0 — `search-history` crash DB (même root cause)
+
 - Symptôme: même erreur SQL que `context`.
 - Action:
   - réutiliser la même routine de migration/ensure-schema
@@ -43,6 +48,7 @@ Ce plan couvre **uniquement**:
   - pas de crash SQL; sortie valide ou vide explicite.
 
 ## P1 — robustesse runtime (`engage` / `appreciate` / `discover`)
+
 - Symptôme: exécutions longues/hang, SIGKILL/timeout dans orchestration.
 - Action:
   - ajouter progression/logs par phase
@@ -56,11 +62,13 @@ Ce plan couvre **uniquement**:
 ## Stratégie de tests (obligatoire)
 
 ## 1) Tests internes (automatisés)
+
 - unit + intégration ciblés par bug
 - test de non-régression pour chaque fix
 - CI verte avant merge
 
 ## 2) Tests exhaustifs CLI (commande par commande)
+
 - couvrir toutes commandes + sous-commandes
 - pour chaque commande:
   - cas nominal
@@ -69,12 +77,15 @@ Ce plan couvre **uniquement**:
 - consigner code retour + extrait sortie
 
 ## 3) Tests en conditions réelles (obligatoires)
+
 Pour chaque commande réparée puis pour toutes les autres:
+
 - exécution sur données/compte réels (BlueSky)
 - sorties réelles collectées et archivées dans doc
 - comparaison attendu vs observé
 
 ### Matrice minimale réelle (cron/skills + reste)
+
 - notify (`--execute --quiet`, `--score --all`)
 - dms / dm
 - threads (`evaluate`, `list`, `tree`, `backoff-*`, `migrate-state`)
@@ -90,23 +101,29 @@ Pour chaque commande réparée puis pour toutes les autres:
 ---
 
 ## Ordre d’exécution
+
 1. Fix P0 `threads tree` + tests internes + test réel
 2. Fix P0 `context` + `search-history` (schema/migration) + tests internes + tests réels
+3. Implémentation de P1
 3. Sweep exhaustif toutes commandes (internes + réelles)
-4. Fixes complémentaires issus du sweep
+4. PRs et Fixes complémentaires issus du sweep
+5. implémentation des PRs issues du sweep
 5. Deuxième sweep complet de confirmation
 6. Mise à jour doc utilisateur avec outputs réels validés
 
 ---
 
 ## Livrables
+
 - `docs/PLAN.md` (ce fichier)
 - PR(s) de fix avec tests associés
 - journal des tests réels (commande, code retour, output)
 - mise à jour `docs/USAGE_GUIDE.md` avec exemples réels vérifiés
 
 ## Critère de fin
+
 Plan terminé quand:
+
 - P0 corrigés,
 - tests exhaustifs passés,
 - tests réels exécutés sur toutes commandes,
