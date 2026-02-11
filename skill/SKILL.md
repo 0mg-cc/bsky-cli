@@ -164,19 +164,19 @@ uv run bsky config --init                           # Create defaults
 
 ```bash
 # Notifications every 15 min
-*/15 * * * * uv run bsky notify --execute --quiet --max-likes 30 --no-dm
+*/15 * * * * cd ~/bsky-cli && uv run bsky notify --execute --quiet --max-likes 30 --no-dm
 
 # Engage twice daily
-0 10,17 * * * uv run bsky engage --max-runtime-seconds 300
+0 10,17 * * * cd ~/bsky-cli && uv run bsky engage --max-runtime-seconds 300
 
 # Appreciate at noon
-30 12 * * * uv run bsky appreciate --max 6 --max-runtime-seconds 120
+30 12 * * * cd ~/bsky-cli && uv run bsky appreciate --max 6 --max-runtime-seconds 120
 
 # Organic (with probability gate)
-*/30 8-22 * * * uv run bsky organic
+*/30 8-22 * * * cd ~/bsky-cli && uv run bsky organic
 
 # Discover daily
-0 15 * * * uv run bsky discover follows --execute --max 5 --max-runtime-seconds 120
+0 15 * * * cd ~/bsky-cli && uv run bsky discover follows --execute --max 5 --max-runtime-seconds 120
 ```
 
 ## State & Config

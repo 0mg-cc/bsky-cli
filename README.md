@@ -40,7 +40,7 @@ BSKY_APP_PASSWORD=xxxx-xxxx-xxxx-xxxx
 
 Get an app password from: [Settings → App Passwords](https://bsky.app/settings/app-passwords)
 
-For LLM features (`engage`, `appreciate`, `organic`), also create a pass entry at `api/openrouter`:
+For LLM features (`engage`, `appreciate`, `organic`, `people --enrich`), also create a pass entry at `api/openrouter`:
 
 ```
 OPENROUTER_API_KEY=sk-or-...
@@ -66,6 +66,9 @@ uv run bsky context user.bsky.social
 ```
 
 ## Command Overview
+
+> **Note**: All examples below assume you're in the `bsky-cli` project directory.  
+> Use `uv run bsky ...` or activate the virtualenv first (`source .venv/bin/activate`).
 
 ### Posting & Interaction
 
