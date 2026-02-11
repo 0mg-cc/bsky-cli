@@ -57,7 +57,9 @@ def test_get_follows_respects_runtime_guard_between_pages(mock_get):
             self.checks = 0
         def check(self, phase):
             self.checks += 1
-            return self.checks >= 3  # timeout on 3rd page
+            # get_follows checks guard both before and after each page fetch.
+            # Timeout just before starting page 3 (after 2 pages completed).
+            return self.checks >= 5
 
     counter = {"n": 0}
 
@@ -77,6 +79,32 @@ def test_get_follows_respects_runtime_guard_between_pages(mock_get):
     except DiscoverRuntimeTimeout:
         pass
 
-    # Guard fired on 3rd check → only 2 pages completed
+    # Guard fired before starting page 3 → only 2 pages completed
     assert mock_get.call_count == 2
-    assert guard.checks == 3
+    assert guard.checks == 5
+
+
+@patch("bsky_cli.discover.requests.get")
+def test_get_follows_checks_runtime_after_request(mock_get):
+    """Regression: if the *final* page fetch overruns the budget, we should still timeout."""
+
+    class Guard:
+        def __init__(self):
+            self.checks = 0
+        def check(self, phase):
+            self.checks += 1
+            # Allow the pre-request check, timeout right after the request returns.
+            return self.checks >= 2
+
+    mock_get.return_value = _Resp({"follows": [{"did": "did:example:a"}]})
+
+    guard = Guard()
+
+    try:
+        get_follows("https://example", "jwt", "did:me", guard=guard)
+        assert False, "Should have raised DiscoverRuntimeTimeout"
+    except DiscoverRuntimeTimeout:
+        pass
+
+    assert mock_get.call_count == 1
+    assert guard.checks == 2
