@@ -1,0 +1,16 @@
+usage: bsky dms [-h] [--json] [--limit LIMIT] [--preview PREVIEW] {show} ...
+
+positional arguments:
+  {show}
+    show             Show messages for a conversation
+
+options:
+  -h, --help         show this help message and exit
+  --json             Output JSON
+  --limit LIMIT      Number of conversations to fetch
+  --preview PREVIEW  Preview N latest messages per convo
+
+EXAMPLES:
+  bsky dms --json
+  bsky dms --limit 30 --preview 1
+  bsky dms show jenrm.bsky.social --json --limit 100

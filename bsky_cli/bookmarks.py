@@ -47,16 +47,40 @@ def resolve_post_uri(pds: str, jwt: str, url: str) -> str | None:
     return f"at://{did}/app.bsky.feed.post/{rkey}"
 
 
+def resolve_post_uri_and_cid(pds: str, jwt: str, url: str) -> tuple[str, str] | None:
+    """Resolve a post URL to (at:// URI, CID) by fetching the post record."""
+    uri = resolve_post_uri(pds, jwt, url)
+    if not uri:
+        return None
+    try:
+        r = requests.get(
+            f"{pds}/xrpc/app.bsky.feed.getPosts",
+            headers={"Authorization": f"Bearer {jwt}"},
+            params={"uris": uri},
+            timeout=15,
+        )
+        r.raise_for_status()
+        posts = r.json().get("posts", [])
+        if posts:
+            return uri, posts[0]["cid"]
+        print(f"Post not found: {url}")
+        return None
+    except Exception as e:
+        print(f"Error fetching post: {e}")
+        return None
+
+
 def create_bookmark(pds: str, jwt: str, did: str, post_url: str) -> bool:
     """Create a bookmark for a post URL."""
-    uri = resolve_post_uri(pds, jwt, post_url)
-    if not uri:
+    resolved = resolve_post_uri_and_cid(pds, jwt, post_url)
+    if not resolved:
         return False
+    uri, cid = resolved
 
     r = requests.post(
         f"{pds}/xrpc/app.bsky.bookmark.createBookmark",
         headers={"Authorization": f"Bearer {jwt}", "Content-Type": "application/json"},
-        json={"repo": did, "subject": uri},
+        json={"uri": uri, "cid": cid},
         timeout=30,
     )
     if r.status_code == 200:
@@ -68,14 +92,15 @@ def create_bookmark(pds: str, jwt: str, did: str, post_url: str) -> bool:
 
 def delete_bookmark(pds: str, jwt: str, did: str, post_url: str) -> bool:
     """Delete a bookmark for a post URL."""
-    uri = resolve_post_uri(pds, jwt, post_url)
-    if not uri:
+    resolved = resolve_post_uri_and_cid(pds, jwt, post_url)
+    if not resolved:
         return False
+    uri, cid = resolved
 
     r = requests.post(
         f"{pds}/xrpc/app.bsky.bookmark.deleteBookmark",
         headers={"Authorization": f"Bearer {jwt}", "Content-Type": "application/json"},
-        json={"repo": did, "subject": uri},
+        json={"uri": uri, "cid": cid},
         timeout=30,
     )
     if r.status_code == 200:

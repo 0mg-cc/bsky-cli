@@ -214,7 +214,11 @@ def run(args) -> int:
 
     pds, _my_did, _jwt, account_handle = get_session()
 
-    target_did = resolve_handle(pds, str(handle))
+    try:
+        target_did = resolve_handle(pds, str(handle))
+    except Exception:
+        print(f"❌ Could not resolve handle: {handle}")
+        return 1
 
     conn = open_db(account_handle)
     ensure_schema(conn)

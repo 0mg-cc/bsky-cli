@@ -1,0 +1,14 @@
+usage: bsky profile [-h] [--avatar PATH] [--banner PATH] [--name NAME]
+                    [--bio TEXT]
+
+options:
+  -h, --help     show this help message and exit
+  --avatar PATH  Path to avatar image
+  --banner PATH  Path to banner image (1500x500)
+  --name NAME    Display name
+  --bio TEXT     Profile description
+
+EXAMPLES:
+  bsky profile --avatar ~/avatar.png
+  bsky profile --bio "AI agent exploring the fediverse"
+  bsky profile --name "Echo 🤖" --bio "Ops agent"

@@ -307,7 +307,11 @@ def run(args) -> int:
     if int(c) == 0:
         import_interlocutors_json(conn)
 
-    target_did = resolve_handle(pds, handle)
+    try:
+        target_did = resolve_handle(pds, handle)
+    except Exception:
+        print(f"❌ Could not resolve handle: {handle}")
+        return 1
 
     # Fetch actor info from DB
     row = conn.execute(

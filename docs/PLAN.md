@@ -1,4 +1,4 @@
-# PLAN.md — Stabilisation bugs + validation réelle (bsky-cli)
+# PLAN.md - Stabilisation bugs + validation réelle (bsky-cli)
 
 Objectif: corriger les bugs bloquants observés en conditions réelles et valider le CLI de façon exhaustive, avec sorties réelles.
 
@@ -14,7 +14,7 @@ Ce plan couvre **uniquement**:
 
 ## Priorités bugs
 
-## P0 — `threads tree` cassé
+## P0 - `threads tree` cassé
 
 - Symptôme: `Unknown threads command`
 - Cause probable: dispatch manquant dans `threads_mod/commands.py::run()`.
@@ -25,19 +25,19 @@ Ce plan couvre **uniquement**:
 - DoD:
   - la commande retourne un arbre (ou une erreur métier explicite), jamais `Unknown threads command`.
 
-## P0 — `context` crash DB (`dm_convo_members`)
+## P0 - `context` crash DB (`dm_convo_members`)
 
 - Symptôme: `sqlite3.OperationalError: no such table: dm_convo_members`
 - Cause probable: schéma account DB partiellement migré.
 - Action:
-  - centraliser `ensure_schema` / migration idempotente au point d’ouverture DB
+  - centraliser `ensure_schema` / migration idempotente au point d'ouverture DB
   - fallback contrôlé sans traceback brut
   - test intégration sur DB legacy partielle
   - test réel `bsky context <handle> --json`
 - DoD:
   - pas de crash SQL; sortie valide (données ou résultat vide cohérent).
 
-## P0 — `search-history` crash DB (même root cause)
+## P0 - `search-history` crash DB (même root cause)
 
 - Symptôme: même erreur SQL que `context`.
 - Action:
@@ -47,7 +47,7 @@ Ce plan couvre **uniquement**:
 - DoD:
   - pas de crash SQL; sortie valide ou vide explicite.
 
-## P1 — robustesse runtime (`engage` / `appreciate` / `discover`)
+## P1 - robustesse runtime (`engage` / `appreciate` / `discover`)
 
 - Symptôme: exécutions longues/hang, SIGKILL/timeout dans orchestration.
 - Action:
@@ -100,7 +100,7 @@ Pour chaque commande réparée puis pour toutes les autres:
 
 ---
 
-## Ordre d’exécution
+## Ordre d'exécution
 
 1. Fix P0 `threads tree` + tests internes + test réel
 2. Fix P0 `context` + `search-history` (schema/migration) + tests internes + tests réels
@@ -138,12 +138,15 @@ Pour chaque commande réparée puis pour toutes les autres:
   - ✅ garde-fou wall-clock commun (`runtime_guard.py`) + code retour timeout non-zero (`124`)
   - ✅ logs de progression explicites par phase (`collect → score → decide → act`)
   - ✅ tests ciblés timeout/progression: `tests/test_runtime_bounds.py` (8 passed)
-  - ✅ state persistence on timeout (engage/appreciate/discover) — PR #16 merged
-  - ✅ organic LLM retry limité aux erreurs transientes (429, ConnectionError, Timeout) — PR #17 merged
+  - ✅ state persistence on timeout (engage/appreciate/discover) - PR #16 merged
+  - ✅ organic LLM retry limité aux erreurs transientes (429, ConnectionError, Timeout) - PR #17 merged
   - ✅ smoke réels (budget timeout minimal) archivés dans `docs/help-snapshots/`
-- ⏳ Sweep exhaustif commande par commande à faire
+- 🔄 Sweep exhaustif commande par commande - PR #18 ouverte
+  - 26 commandes testées (nominal/edge/error)
+  - 3 bugs trouvés et corrigés: bookmark API, context/search-history crash, discover pagination timeout
+  - docs/sweep-2026-02-11.md (journal complet)
 
-## Plan d’action immédiat (actionnable)
+## Plan d'action immédiat (actionnable)
 
 ### A) P1 Runtime bounds + progression logs
 
@@ -162,21 +165,24 @@ Pour chaque commande réparée puis pour toutes les autres:
 
 ### B) Sweep exhaustif commande par commande
 
-- [ ] Générer la liste complète des commandes via `bsky --help` + sous-commandes.
-- [ ] Exécuter pour chaque commande:
-  - [ ] cas nominal
-  - [ ] cas limite
-  - [ ] cas erreur
-- [ ] Capturer pour chaque run: commande, code retour, extrait output.
-- [ ] Produire un journal consolidé dans `docs/CLI_REFERENCE.md` (section validation réelle).
+- [x] Générer la liste complète des commandes via `bsky --help` + sous-commandes (26 commandes).
+- [x] Exécuter pour chaque commande:
+  - [x] cas nominal
+  - [x] cas limite
+  - [x] cas erreur
+- [x] Capturer pour chaque run: commande, code retour, extrait output.
+- [x] Produire un journal consolidé dans `docs/sweep-2026-02-11.md`.
 
-### C) PR/merge loop (jusqu’à completion)
+### C) PR/merge loop (jusqu'à completion)
 
-- [ ] Ouvrir PR P1 runtime
-- [ ] Review inline + corrections
-- [ ] Re-run tests + smoke
-- [ ] Merge
-- [ ] Ouvrir PR sweep/doc sync
+- [x] Ouvrir PR P1 runtime → PR #16 mergée
+- [x] Review inline + corrections → state persistence + intra-loop timeout
+- [x] Re-run tests + smoke → 218/218
+- [x] Merge → squash merged
+- [x] Ouvrir PR organic retry → PR #17 mergée
+- [x] Review inline + corrections → retry scope limited to 429/transient
+- [x] Merge → squash merged
+- [x] Ouvrir PR sweep → PR #18 ouverte
 - [ ] Review inline + corrections
 - [ ] Merge
 

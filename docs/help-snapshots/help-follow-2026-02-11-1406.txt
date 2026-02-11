@@ -1,0 +1,11 @@
+usage: bsky follow [-h] [--dry-run] handle
+
+positional arguments:
+  handle      Handle to follow (e.g. user.bsky.social)
+
+options:
+  -h, --help  show this help message and exit
+  --dry-run   Preview without following
+
+EXAMPLE:
+  bsky follow user.bsky.social

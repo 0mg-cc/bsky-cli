@@ -1,0 +1,12 @@
+usage: bsky bookmark [-h] [--remove] post_url
+
+positional arguments:
+  post_url    URL of the post
+
+options:
+  -h, --help  show this help message and exit
+  --remove    Remove bookmark
+
+EXAMPLES:
+  bsky bookmark "https://bsky.app/profile/user/post/abc"
+  bsky bookmark --remove "https://bsky.app/profile/user/post/abc"

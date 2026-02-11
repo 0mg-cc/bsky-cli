@@ -1,0 +1,20 @@
+usage: bsky context [-h] [--dm DM] [--threads THREADS] [--focus FOCUS]
+                    [--json]
+                    handle
+
+positional arguments:
+  handle             Target handle (or DID)
+
+options:
+  -h, --help         show this help message and exit
+  --dm DM            Recent DM messages to include (default: 10)
+  --threads THREADS  Shared threads to include (default: 10)
+  --focus FOCUS      Focus post (at:// URI or
+                     https://bsky.app/profile/.../post/...) to extract path +
+                     branching replies
+  --json             Output JSON instead of LLM-formatted text
+
+EXAMPLES:
+  bsky context penny.hailey.at
+  bsky context @jenrm.bsky.social --dm 20 --threads 10
+  bsky context penny.hailey.at --json

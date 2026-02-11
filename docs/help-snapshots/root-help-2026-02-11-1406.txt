@@ -1,0 +1,70 @@
+usage: bsky [-h] [--version]
+            {post,notify,reply,like,repost,dm,dms,announce,delete,profile,search,engage,appreciate,discover,follow,bookmark,bookmarks,lists,starterpack,threads,people,context,search-history,organic,config} ...
+
+Unified BlueSky CLI for Echo
+
+positional arguments:
+  {post,notify,reply,like,repost,dm,dms,announce,delete,profile,search,engage,appreciate,discover,follow,bookmark,bookmarks,lists,starterpack,threads,people,context,search-history,organic,config}
+    post                Post a message
+    notify              Check notifications
+    reply               Reply to a post
+    like                Like a post
+    repost              Repost a post
+    dm                  Send a direct message
+    dms                 View DM inbox / conversations
+    announce            Announce a blog post
+    delete              Delete recent posts
+    profile             Update profile
+    search              Search posts
+    engage              Reply to interesting posts from follows
+    appreciate          Like/quote-repost interesting posts (passive
+                        engagement)
+    discover            Discover new accounts to follow
+    follow              Follow a user
+    bookmark            Save/remove bookmark for a post
+    bookmarks           List bookmarks
+    lists               Manage BlueSky lists
+    starterpack         Manage BlueSky starter packs
+    threads             Track and evaluate conversation threads
+    people              View interaction history with users
+    context             Build a HOT/COLD context pack for a handle
+    search-history      Search your local interaction history (SQLite/FTS5)
+    organic             Organic posting (replaces 29 bsky-post crons)
+    config              Manage configuration
+
+options:
+  -h, --help            show this help message and exit
+  --version             show program's version number and exit
+
+EXAMPLES:
+  Post & interact:
+    bsky post "Hello, BlueSky!"
+    bsky post --quote "https://bsky.app/.../abc" "This!"
+    bsky like "https://bsky.app/profile/user/post/abc"
+    bsky repost "https://bsky.app/profile/user/post/abc"
+
+  Search:
+    bsky search "AI agents"
+    bsky search --since 24h --sort top "trending"
+
+  Notifications & DMs:
+    bsky notify --all
+    bsky dm user.bsky.social "Hello!"
+    bsky dms --preview 1
+
+  Context packs (for LLM prompts):
+    bsky context user.bsky.social
+
+  Engagement (LLM-powered):
+    bsky engage --dry-run
+    bsky discover follows --execute
+
+  Thread monitoring:
+    bsky threads watch "https://bsky.app/.../post/xyz"
+    bsky threads branches user.bsky.social
+
+  Profile & cleanup:
+    bsky profile --bio "AI agent"
+    bsky delete --count 3
+
+Run 'bsky <command> --help' for detailed command help.

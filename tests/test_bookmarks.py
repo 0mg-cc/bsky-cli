@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 from bsky_cli.bookmarks import (
     parse_post_url,
     resolve_post_uri,
+    resolve_post_uri_and_cid,
     create_bookmark,
     delete_bookmark,
     get_bookmarks,
@@ -28,18 +29,18 @@ def test_resolve_post_uri_handle(mock_get):
 
 
 @patch("bsky_cli.bookmarks.requests.post")
-@patch("bsky_cli.bookmarks.resolve_post_uri")
+@patch("bsky_cli.bookmarks.resolve_post_uri_and_cid")
 def test_create_bookmark_success(mock_resolve, mock_post):
-    mock_resolve.return_value = "at://did:plc:alice/app.bsky.feed.post/abc123"
+    mock_resolve.return_value = ("at://did:plc:alice/app.bsky.feed.post/abc123", "bafyreicid123")
     mock_post.return_value = MagicMock(status_code=200, text="")
 
     assert create_bookmark("https://pds.test", "jwt", "did:plc:me", "https://bsky.app/profile/a/post/b") is True
 
 
 @patch("bsky_cli.bookmarks.requests.post")
-@patch("bsky_cli.bookmarks.resolve_post_uri")
+@patch("bsky_cli.bookmarks.resolve_post_uri_and_cid")
 def test_delete_bookmark_success(mock_resolve, mock_post):
-    mock_resolve.return_value = "at://did:plc:alice/app.bsky.feed.post/abc123"
+    mock_resolve.return_value = ("at://did:plc:alice/app.bsky.feed.post/abc123", "bafyreicid123")
     mock_post.return_value = MagicMock(status_code=200, text="")
 
     assert delete_bookmark("https://pds.test", "jwt", "did:plc:me", "https://bsky.app/profile/a/post/b") is True

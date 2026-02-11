@@ -1,0 +1,11 @@
+usage: bsky delete [-h] [--count COUNT] [--dry-run]
+
+options:
+  -h, --help     show this help message and exit
+  --count COUNT  Number of posts to delete (default: 1)
+  --dry-run      List without deleting
+
+EXAMPLES:
+  bsky delete                  # Delete last post
+  bsky delete --count 5        # Delete last 5 posts
+  bsky delete --dry-run        # Preview what would be deleted

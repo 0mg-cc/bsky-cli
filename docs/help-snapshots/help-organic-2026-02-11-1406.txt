@@ -1,0 +1,26 @@
+usage: bsky organic [-h] [--dry-run] [--force] [--probability PROBABILITY]
+                    [--max-posts MAX_POSTS]
+
+options:
+  -h, --help            show this help message and exit
+  --dry-run             Preview without posting
+  --force               Ignore time window and probability
+  --probability PROBABILITY
+                        Posting probability (default: from config)
+  --max-posts MAX_POSTS
+                        Max posts in a thread when text exceeds 280 (default:
+                        from config organic.max_posts, fallback 3)
+
+EXAMPLES:
+  bsky organic                    # Normal run (respects time/probability)
+  bsky organic --dry-run          # Preview without posting
+  bsky organic --force            # Post regardless of time/probability
+
+HOW IT WORKS:
+  - Checks time of day (active hours only)
+  - Applies probability filter (default 20%)
+  - Generates contextual content via LLM
+  - Avoids duplicate topics
+
+TYPICAL CRON SETUP:
+  */30 8-22 * * * cd ~/bsky-cli && uv run bsky organic
