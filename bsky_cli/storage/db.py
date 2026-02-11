@@ -183,6 +183,27 @@ MIGRATIONS: list[str] = [
 
     CREATE INDEX IF NOT EXISTS idx_actor_auto_notes_recent ON actor_auto_notes(did, kind, created_at);
     """,
+
+    # 6 — threads_mod state (legacy JSON → SQLite)
+    """
+    CREATE TABLE IF NOT EXISTS threads_mod_threads (
+      root_uri TEXT PRIMARY KEY,
+      thread_json TEXT NOT NULL,
+      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS threads_mod_evaluated_notifications (
+      notif_uri TEXT PRIMARY KEY,
+      evaluated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS threads_mod_meta (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_threads_mod_eval_time ON threads_mod_evaluated_notifications(evaluated_at);
+    """,
 ]
 
 

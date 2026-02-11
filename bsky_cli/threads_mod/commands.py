@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from ..auth import get_session
 from .analysis import analyze_thread
@@ -10,7 +11,7 @@ from .api import get_notifications
 from .config import BACKOFF_INTERVALS, CRON_THRESHOLD, DEFAULT_SILENCE_HOURS, MAX_TOPIC_DRIFT, MIN_THREAD_DEPTH
 from .cron import generate_cron_config
 from .models import TrackedThread
-from .state import load_threads_state, save_threads_state
+from .state import load_threads_state, migrate_threads_state_from_json, save_threads_state
 from .utils import uri_to_url
 
 def cmd_evaluate(args) -> int:
@@ -454,6 +455,30 @@ def cmd_backoff_update(args) -> int:
     save_threads_state(state)
     return 0
 
+def cmd_migrate_state(args) -> int:
+    """Migrate legacy threads_mod JSON state into SQLite."""
+
+    from_json = getattr(args, "from_json", None)
+    archive = bool(getattr(args, "archive_json", False))
+    dry_run = bool(getattr(args, "dry_run", False))
+
+    path = Path(from_json) if from_json else None
+    res = migrate_threads_state_from_json(path, archive_json=archive, dry_run=dry_run)
+
+    if not res.get("migrated") and res.get("reason") == "missing":
+        print(f"No legacy state JSON found at {res.get('path')}")
+        return 0
+
+    if res.get("dry_run"):
+        print(f"[dry-run] would migrate: threads={res.get('threads')} evaluated={res.get('evaluated')} from {res.get('path')}")
+        return 0
+
+    print(f"✓ Migrated legacy threads state: threads={res.get('threads')} evaluated={res.get('evaluated')}")
+    if res.get("archived_to"):
+        print(f"  archived: {res['archived_to']}")
+    return 0
+
+
 def run(args) -> int:
     """Entry point from CLI."""
     if args.threads_command == "evaluate":
@@ -470,6 +495,8 @@ def run(args) -> int:
         return cmd_backoff_check(args)
     elif args.threads_command == "backoff-update":
         return cmd_backoff_update(args)
+    elif args.threads_command == "migrate-state":
+        return cmd_migrate_state(args)
     else:
         print("Unknown threads command")
         return 2

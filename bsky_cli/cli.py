@@ -413,12 +413,14 @@ SUBCOMMANDS:
   tree          Print a visual ASCII tree of a thread (human-friendly)
   backoff-check Check if monitoring is due (for cron)
   backoff-update Update backoff after check
+  migrate-state One-shot migration from legacy JSON state to SQLite
 
 EXAMPLES:
   bsky threads evaluate
   bsky threads watch "https://bsky.app/profile/user/post/abc"
   bsky threads branches user.bsky.social
   bsky threads backoff-update user --activity
+  bsky threads migrate-state --archive-json
 
 BACKOFF INTERVALS:
   10min → 20min → 40min → 80min → 160min → 240min → 18h (final)
@@ -463,6 +465,12 @@ BACKOFF INTERVALS:
     threads_backoff_update = threads_sub.add_parser("backoff-update", help="Update backoff state after check")
     threads_backoff_update.add_argument("target", help="Thread URL, URI, or root author handle")
     threads_backoff_update.add_argument("--activity", action="store_true", help="New activity was found (resets backoff)")
+
+    # threads migrate-state
+    threads_migrate = threads_sub.add_parser("migrate-state", help="Migrate legacy JSON state into SQLite")
+    threads_migrate.add_argument("--from-json", dest="from_json", default=None, help="Path to legacy JSON (default: threads_mod config path)")
+    threads_migrate.add_argument("--archive-json", action="store_true", help="Archive legacy JSON after successful migration")
+    threads_migrate.add_argument("--dry-run", action="store_true", help="Show what would be migrated without writing")
 
     # people (interlocutor tracking)
     people_parser = subparsers.add_parser(
