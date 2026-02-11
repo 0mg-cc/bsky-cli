@@ -4,7 +4,7 @@ Complete reference for every command in `bsky-cli`. Each entry documents the com
 
 **Version**: 0.12.0  
 **Config**: `~/.config/bsky-cli/config.yaml`  
-**Auth**: credentials stored in `~/.config/bsky-cli/config.yaml` (`handle` + `password`)
+**Auth**: credentials loaded from `pass` (`pass show api/bsky`) — requires `BSKY_HANDLE` (or `BSKY_EMAIL`) and `BSKY_APP_PASSWORD` entries. See `bsky config --init` for setup.
 
 ---
 
@@ -73,7 +73,7 @@ bsky post [text] [--embed URL] [--quote URL] [--allow-repeat] [--dry-run]
 
 | Option | Description |
 |--------|-------------|
-| `text` | Post text, max 300 characters. If omitted, posts empty (rare use). |
+| `text` | Post text, max 300 characters (required). |
 | `--embed URL` | Attach a URL with a link preview card. |
 | `--quote URL`, `-q` | Quote-post another post by its `bsky.app` URL. |
 | `--allow-repeat` | Skip duplicate detection (last 10 posts are checked by default). |
