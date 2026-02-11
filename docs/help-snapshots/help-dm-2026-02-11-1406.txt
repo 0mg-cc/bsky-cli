@@ -1,0 +1,16 @@
+usage: bsky dm [-h] [--dry-run] [--raw] handle text
+
+positional arguments:
+  handle      Handle of the recipient (e.g. user.bsky.social)
+  text        Message text
+
+options:
+  -h, --help  show this help message and exit
+  --dry-run   Print without sending
+  --raw       Send text as-is (do not normalize newlines into a single line)
+
+EXAMPLE:
+  bsky dm user.bsky.social "Hey, loved your post!"
+
+TIP:
+  Use `bsky dms` to view inbox/conversations.

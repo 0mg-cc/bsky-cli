@@ -1,0 +1,28 @@
+usage: bsky search-history [-h] [--scope {all,dm,threads}] [--since SINCE]
+                           [--until UNTIL] [--limit LIMIT] [--json]
+                           handle query
+
+positional arguments:
+  handle                Target handle (or DID)
+  query                 FTS query string
+
+options:
+  -h, --help            show this help message and exit
+  --scope {all,dm,threads}
+                        Which sources to search (default: all)
+  --since SINCE         Only results at/after this timestamp/date (string
+                        compare)
+  --until UNTIL         Only results at/before this timestamp/date (string
+                        compare)
+  --limit LIMIT         Max results (default: 25)
+  --json                Output JSON
+
+EXAMPLES:
+  bsky search-history penny.hailey.at "timestamps"
+  bsky search-history @jenrm.bsky.social "cyberpunk" --scope threads
+  bsky search-history penny.hailey.at "hello" --scope dm --json
+
+SCOPES:
+  dm       - DMs only
+  threads  - thread interactions only
+  all      - both

@@ -94,11 +94,14 @@ def get_follows(
     actor: str,
     limit: int | None = None,
     max_pages: int = 200,
+    guard: RuntimeGuard | None = None,
 ) -> list[dict]:
     """Get accounts that an actor follows.
 
     Includes pagination safety guards so a malformed or repeating cursor
-    cannot trap the caller in an infinite loop.
+    cannot trap the caller in an infinite loop.  When *guard* is given,
+    the runtime budget is checked between pages so that long pagination
+    runs respect ``--max-runtime-seconds``.
     """
     follows = []
     cursor = None
@@ -106,6 +109,8 @@ def get_follows(
     pages = 0
 
     while True:
+        if guard and guard.check("collect"):
+            raise DiscoverRuntimeTimeout
         params = {"actor": actor, "limit": 100}
         if cursor:
             params["cursor"] = cursor
@@ -134,6 +139,8 @@ def get_follows(
 
             seen_cursors.add(next_cursor)
             cursor = next_cursor
+        except DiscoverRuntimeTimeout:
+            raise
         except Exception:
             break
     return follows[:limit] if limit else follows
@@ -284,7 +291,7 @@ def discover_follows(
     
     # Get my follows
     print("📋 Fetching your follows...")
-    my_follows = get_follows(pds, jwt, my_did)
+    my_follows = get_follows(pds, jwt, my_did, guard=guard)
     my_follow_dids = {f["did"] for f in my_follows}
     print(f"✓ You follow {len(my_follows)} accounts")
     
@@ -322,8 +329,8 @@ def discover_follows(
         handle = follow.get("handle", follow["did"])
         print(f"  Scanning @{handle} ({i+1}/{len(scan_batch)})...")
 
-        # Get their follows
-        their_follows = get_follows(pds, jwt, follow["did"])
+        # Get their follows (guard passed to check timeout between pages)
+        their_follows = get_follows(pds, jwt, follow["did"], guard=guard)
         
         # Sample based on config
         sample_size = max(1, int(len(their_follows) * config["follows_sample_pct"]))
@@ -410,7 +417,7 @@ def discover_reposts(
 
     # Get my follows
     print("📋 Fetching your follows...")
-    my_follows = get_follows(pds, jwt, my_did)
+    my_follows = get_follows(pds, jwt, my_did, guard=guard)
     my_follow_dids = {f["did"] for f in my_follows}
     print(f"✓ You follow {len(my_follows)} accounts")
     

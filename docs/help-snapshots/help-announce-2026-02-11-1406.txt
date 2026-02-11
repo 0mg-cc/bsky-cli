@@ -1,0 +1,14 @@
+usage: bsky announce [-h] [--text TEXT] [--dry-run] post
+
+positional arguments:
+  post         Post slug or path to markdown file
+
+options:
+  -h, --help   show this help message and exit
+  --text TEXT  Custom text (default: post title)
+  --dry-run    Print without posting
+
+EXAMPLES:
+  bsky announce my-post-slug
+  bsky announce my-post-slug --text "Custom announcement text"
+  bsky announce --dry-run my-post-slug

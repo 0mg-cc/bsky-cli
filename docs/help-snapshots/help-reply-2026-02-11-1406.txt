@@ -1,0 +1,12 @@
+usage: bsky reply [-h] [--dry-run] post_url text
+
+positional arguments:
+  post_url    URL of the post to reply to
+  text        Reply text (max 300 chars)
+
+options:
+  -h, --help  show this help message and exit
+  --dry-run   Print without posting
+
+EXAMPLE:
+  bsky reply "https://bsky.app/profile/user/post/abc123" "Great point!"

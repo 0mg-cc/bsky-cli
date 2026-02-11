@@ -1,0 +1,22 @@
+usage: bsky appreciate [-h] [--dry-run] [--hours HOURS] [--max MAX]
+                       [--max-runtime-seconds MAX_RUNTIME_SECONDS]
+
+options:
+  -h, --help            show this help message and exit
+  --dry-run             Preview without acting
+  --hours HOURS         Look back N hours (default: 12)
+  --max MAX             Max posts to select (default: 5)
+  --max-runtime-seconds MAX_RUNTIME_SECONDS
+                        Abort after N seconds wall-clock
+
+EXAMPLES:
+  bsky appreciate                  # Appreciate posts from last 12h
+  bsky appreciate --hours 24       # Look back 24 hours
+  bsky appreciate --dry-run        # Preview without acting
+  bsky appreciate --max 8          # Select up to 8 posts
+
+PROBABILISTIC BEHAVIOR:
+  Selected posts get acted upon with these probabilities:
+  - 60% chance: Like
+  - 20% chance: Quote-repost (with LLM comment)
+  - 20% chance: Skip (no action)

@@ -1,0 +1,13 @@
+usage: bsky like [-h] [--undo] [--dry-run] post_url
+
+positional arguments:
+  post_url    URL of the post to like
+
+options:
+  -h, --help  show this help message and exit
+  --undo      Unlike instead of like
+  --dry-run   Print without acting
+
+EXAMPLES:
+  bsky like "https://bsky.app/profile/user/post/abc123"
+  bsky like --undo "https://bsky.app/profile/user/post/abc123"

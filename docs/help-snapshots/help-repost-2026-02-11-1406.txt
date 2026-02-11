@@ -1,0 +1,13 @@
+usage: bsky repost [-h] [--undo] [--dry-run] post_url
+
+positional arguments:
+  post_url    URL of the post to repost
+
+options:
+  -h, --help  show this help message and exit
+  --undo      Remove repost
+  --dry-run   Print without acting
+
+EXAMPLES:
+  bsky repost "https://bsky.app/profile/user/post/abc123"
+  bsky repost --undo "https://bsky.app/profile/user/post/abc123"
