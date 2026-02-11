@@ -126,6 +126,11 @@ def get_follows(
             follows.extend(data.get("follows", []))
             pages += 1
 
+            # Re-check after the request so we catch timeouts that occur during
+            # a slow final page fetch (Codex inline review on PR #16).
+            if guard and guard.check("collect"):
+                raise DiscoverRuntimeTimeout
+
             if limit and len(follows) >= limit:
                 break
             if pages >= max_pages:
@@ -438,6 +443,9 @@ def discover_reposts(
             print(f"  ...checked {i}/{len(sample)}")
 
         feed = get_author_feed(pds, jwt, follow["did"], limit=20)
+        # If the feed call itself overruns the budget, catch it here before we
+        # can incorrectly return success on empty scans (Codex inline review on PR #16).
+        check_runtime("collect")
         for item in feed:
             # Check if it's a repost
             reason = item.get("reason", {})
