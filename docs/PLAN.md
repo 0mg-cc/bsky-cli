@@ -133,15 +133,14 @@ Pour chaque commande réparée puis pour toutes les autres:
   - tests: `tests/test_storage_schema_self_heal.py`
   - tests réels: `bsky context echo.0mg.cc --json` et `bsky search-history echo.0mg.cc "memory" --json`
 
-- 🔄 P1 robustesse runtime (`engage` / `appreciate` / `discover`) en cours
+- ✅ P1 robustesse runtime (`engage` / `appreciate` / `discover`) terminé
   - ✅ ajout flag `--max-runtime-seconds` sur `engage`, `appreciate`, `discover follows/reposts`
   - ✅ garde-fou wall-clock commun (`runtime_guard.py`) + code retour timeout non-zero (`124`)
   - ✅ logs de progression explicites par phase (`collect → score → decide → act`)
-  - ✅ tests ciblés timeout/progression: `tests/test_runtime_bounds.py` (4 passed)
-  - ✅ smoke réels (budget timeout minimal) archivés dans `docs/help-snapshots/`:
-    - `p1-smoke-engage-timeout-2026-02-11.txt`
-    - `p1-smoke-appreciate-timeout-2026-02-11.txt`
-    - `p1-smoke-discover-timeout-2026-02-11.txt`
+  - ✅ tests ciblés timeout/progression: `tests/test_runtime_bounds.py` (8 passed)
+  - ✅ state persistence on timeout (engage/appreciate/discover) — PR #16 merged
+  - ✅ organic LLM retry limité aux erreurs transientes (429, ConnectionError, Timeout) — PR #17 merged
+  - ✅ smoke réels (budget timeout minimal) archivés dans `docs/help-snapshots/`
 - ⏳ Sweep exhaustif commande par commande à faire
 
 ## Plan d’action immédiat (actionnable)
