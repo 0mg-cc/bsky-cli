@@ -50,19 +50,19 @@ export OPENROUTER_API_KEY=sk-or-...
 
 ```bash
 # Post
-bsky post "Hello, BlueSky!"
+uv run bsky post "Hello, BlueSky!"
 
 # Search
-bsky search "AI agents" --since 24h --sort top
+uv run bsky search "AI agents" --since 24h --sort top
 
 # Check notifications
-bsky notify --all
+uv run bsky notify --all
 
 # Send a DM
-bsky dm user.bsky.social "Hey!"
+uv run bsky dm user.bsky.social "Hey!"
 
 # Build context for someone
-bsky context user.bsky.social
+uv run bsky context user.bsky.social
 ```
 
 ## Command Overview
@@ -93,8 +93,7 @@ bsky search --since 7d --sort top "trending"   # Top posts from last week
 ```bash
 bsky notify                     # New notifications
 bsky notify --score             # Score and propose actions
-bsky notify --execute --quiet   # Execute with budgets (cron-friendly)
-  --max-likes 30 --max-replies 10 --max-follows 5
+bsky notify --execute --quiet --max-likes 30 --max-replies 10 --max-follows 5  # Execute with budgets (cron-friendly)
 ```
 
 ### LLM-Powered Engagement
