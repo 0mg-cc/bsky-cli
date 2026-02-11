@@ -33,7 +33,7 @@ uv run bsky follow user.bsky.social                    # Follow
 uv run bsky delete --count 3                           # Delete last 3 posts
 ```
 
-All write commands support `--dry-run` for preview.
+Most write commands support `--dry-run` for preview (check `--help` for each).
 
 ### Search
 
@@ -51,7 +51,8 @@ Time formats: `24h`, `7d`, `2w`, or ISO timestamps.
 uv run bsky notify                         # New notifications
 uv run bsky notify --all --json            # All, as JSON
 uv run bsky notify --score                 # Score and propose actions
-uv run bsky notify --execute --quiet \     # Automated (cron-friendly)
+# Automated (cron-friendly)
+uv run bsky notify --execute --quiet \
   --allow-replies --max-replies 10 \
   --max-likes 30 --max-follows 5 \
   --limit 60 --no-dm
