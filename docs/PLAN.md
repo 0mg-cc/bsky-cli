@@ -120,6 +120,23 @@ Pour chaque commande réparée puis pour toutes les autres:
 - journal des tests réels (commande, code retour, output)
 - mise à jour `docs/USAGE_GUIDE.md` avec exemples réels vérifiés
 
+## Avancement (2026-02-11)
+
+- ✅ P0 `threads tree` corrigé
+  - dispatch `tree` ajouté dans `threads_mod/commands.py::run()`
+  - implémentation `cmd_tree` (rendu ASCII, `--depth`, `--snippet`, `--mine-only`)
+  - tests: `tests/test_threads_tree_cmd.py`
+  - test réel: `bsky threads tree at://did:plc:kcx54umwsf3fgjcz32acp4yw/app.bsky.feed.post/3mejeulsmsp22`
+
+- ✅ P0 `context` / `search-history` crash DB partielle corrigé
+  - root cause: DB pouvant annoncer une version de migration élevée tout en ayant des tables manquantes
+  - fix: `ensure_schema()` ajoute une phase de réconciliation idempotente (`RECONCILE_SCHEMA_SQL`)
+  - tests: `tests/test_storage_schema_self_heal.py`
+  - tests réels: `bsky context echo.0mg.cc --json` et `bsky search-history echo.0mg.cc "memory" --json`
+
+- ⏳ P1 robustesse runtime (`engage` / `appreciate` / `discover`) à faire
+- ⏳ Sweep exhaustif commande par commande à faire
+
 ## Critère de fin
 
 Plan terminé quand:

@@ -207,6 +207,144 @@ MIGRATIONS: list[str] = [
 ]
 
 
+RECONCILE_SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS accounts (
+  account_handle TEXT PRIMARY KEY,
+  account_did TEXT,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+CREATE TABLE IF NOT EXISTS actors (
+  did TEXT PRIMARY KEY,
+  handle TEXT,
+  display_name TEXT,
+  first_seen TEXT,
+  last_interaction TEXT,
+  total_count INTEGER NOT NULL DEFAULT 0,
+  notes_manual TEXT NOT NULL DEFAULT '',
+  notes_auto TEXT NOT NULL DEFAULT '',
+  interests_auto TEXT NOT NULL DEFAULT '',
+  relationship_tone TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS actor_tags (
+  did TEXT NOT NULL,
+  tag TEXT NOT NULL,
+  PRIMARY KEY (did, tag),
+  FOREIGN KEY (did) REFERENCES actors(did) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS interactions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  actor_did TEXT NOT NULL,
+  date TEXT NOT NULL,
+  type TEXT NOT NULL,
+  post_uri TEXT,
+  our_text TEXT,
+  their_text TEXT,
+  FOREIGN KEY (actor_did) REFERENCES actors(did) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_interactions_actor_date ON interactions(actor_did, date);
+
+CREATE TABLE IF NOT EXISTS dm_conversations (
+  convo_id TEXT PRIMARY KEY,
+  last_message_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS dm_convo_members (
+  convo_id TEXT NOT NULL,
+  did TEXT NOT NULL,
+  PRIMARY KEY (convo_id, did)
+);
+
+CREATE TABLE IF NOT EXISTS dm_messages (
+  convo_id TEXT NOT NULL,
+  msg_id TEXT NOT NULL,
+  actor_did TEXT NOT NULL,
+  direction TEXT NOT NULL CHECK(direction IN ('in','out')),
+  sent_at TEXT NOT NULL,
+  text TEXT NOT NULL,
+  facets_json TEXT,
+  raw_json TEXT,
+  PRIMARY KEY (convo_id, msg_id),
+  FOREIGN KEY (actor_did) REFERENCES actors(did) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_dm_messages_actor_time ON dm_messages(actor_did, sent_at);
+CREATE INDEX IF NOT EXISTS idx_dm_messages_convo_time ON dm_messages(convo_id, sent_at);
+CREATE INDEX IF NOT EXISTS idx_dm_members_did ON dm_convo_members(did);
+
+CREATE TABLE IF NOT EXISTS threads (
+  root_uri TEXT PRIMARY KEY,
+  last_seen_at TEXT NOT NULL,
+  root_text_cache TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS thread_actor_state (
+  root_uri TEXT NOT NULL,
+  actor_did TEXT NOT NULL,
+  last_interaction_at TEXT NOT NULL,
+  last_post_uri TEXT,
+  last_us TEXT NOT NULL DEFAULT '',
+  last_them TEXT NOT NULL DEFAULT '',
+  PRIMARY KEY (root_uri, actor_did),
+  FOREIGN KEY (root_uri) REFERENCES threads(root_uri) ON DELETE CASCADE,
+  FOREIGN KEY (actor_did) REFERENCES actors(did) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_thread_actor_recent ON thread_actor_state(actor_did, last_interaction_at);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS history_fts USING fts5(
+  text,
+  kind UNINDEXED,
+  ts UNINDEXED,
+  uri UNINDEXED,
+  actor_did UNINDEXED,
+  convo_id UNINDEXED,
+  direction UNINDEXED
+);
+
+CREATE TRIGGER IF NOT EXISTS trg_history_dm_ai
+AFTER INSERT ON dm_messages
+BEGIN
+  INSERT INTO history_fts(text, kind, ts, uri, actor_did, convo_id, direction)
+  VALUES (NEW.text, 'dm', NEW.sent_at, NULL, NEW.actor_did, NEW.convo_id, NEW.direction);
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_history_inter_ai
+AFTER INSERT ON interactions
+BEGIN
+  INSERT INTO history_fts(text, kind, ts, uri, actor_did, convo_id, direction)
+  VALUES (COALESCE(NEW.our_text,'') || '\n' || COALESCE(NEW.their_text,''), 'interaction', NEW.date, NEW.post_uri, NEW.actor_did, NULL, NULL);
+END;
+
+CREATE TABLE IF NOT EXISTS actor_auto_notes (
+  did TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK(kind IN ('notes','interests','tone')),
+  content TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  PRIMARY KEY (did, kind, created_at),
+  FOREIGN KEY (did) REFERENCES actors(did) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_actor_auto_notes_recent ON actor_auto_notes(did, kind, created_at);
+
+CREATE TABLE IF NOT EXISTS threads_mod_threads (
+  root_uri TEXT PRIMARY KEY,
+  thread_json TEXT NOT NULL,
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+CREATE TABLE IF NOT EXISTS threads_mod_evaluated_notifications (
+  notif_uri TEXT PRIMARY KEY,
+  evaluated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+CREATE TABLE IF NOT EXISTS threads_mod_meta (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_threads_mod_eval_time ON threads_mod_evaluated_notifications(evaluated_at);
+"""
+
+
 def ensure_schema(conn: sqlite3.Connection) -> None:
     conn.execute("CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')))")
     cur = conn.execute("SELECT COALESCE(MAX(version), 0) AS v FROM schema_migrations")
@@ -218,6 +356,12 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
         with conn:
             conn.executescript(sql)
             conn.execute("INSERT INTO schema_migrations(version) VALUES (?)", (idx,))
+
+    # Self-heal partial/broken DBs that claim a high migration version but miss
+    # tables/triggers (observed on legacy account DBs). Keep this idempotent and
+    # avoid one-shot backfill DML to prevent duplicate rows.
+    with conn:
+        conn.executescript(RECONCILE_SCHEMA_SQL)
 
 
 # -----------------------------------------------------------------------------

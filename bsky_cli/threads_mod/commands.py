@@ -7,7 +7,7 @@ from pathlib import Path
 
 from ..auth import get_session
 from .analysis import analyze_thread
-from .api import get_notifications
+from .api import get_notifications, get_thread
 from .config import BACKOFF_INTERVALS, CRON_THRESHOLD, DEFAULT_SILENCE_HOURS, MAX_TOPIC_DRIFT, MIN_THREAD_DEPTH
 from .cron import generate_cron_config
 from .models import TrackedThread
@@ -286,6 +286,103 @@ def cmd_check_branches(args) -> int:
     
     return 0
 
+
+def _thread_target_to_uri(target: str) -> str:
+    target = (target or "").strip()
+    if target.startswith("at://"):
+        return target
+    m = re.match(r"https://bsky\.app/profile/([^/]+)/post/([^/?#]+)", target)
+    if m:
+        actor, rkey = m.group(1), m.group(2)
+        return f"at://{actor}/app.bsky.feed.post/{rkey}"
+    return target
+
+
+def _clean_snippet(text: str, max_len: int) -> str:
+    compact = re.sub(r"\s+", " ", (text or "")).strip()
+    if len(compact) <= max_len:
+        return compact
+    return compact[: max(0, max_len - 1)].rstrip() + "…"
+
+
+def _node_has_author_did(node: dict, did: str) -> bool:
+    post = node.get("post") or {}
+    author = post.get("author") or {}
+    if author.get("did") == did:
+        return True
+    for child in node.get("replies") or []:
+        if _node_has_author_did(child, did):
+            return True
+    return False
+
+
+def _render_thread_tree(node: dict, *, my_did: str, mine_only: bool, snippet_len: int, max_depth: int) -> list[str]:
+    lines: list[str] = []
+
+    def walk(cur: dict, prefix: str = "", is_last: bool = True, level: int = 0):
+        post = cur.get("post") or {}
+        author = post.get("author") or {}
+        handle = author.get("handle") or author.get("did") or "unknown"
+        text = (post.get("record") or {}).get("text", "")
+        mine = " (you)" if author.get("did") == my_did else ""
+
+        connector = "" if level == 0 else ("└─ " if is_last else "├─ ")
+        lines.append(f"{prefix}{connector}@{handle}{mine}: {_clean_snippet(text, snippet_len)}")
+
+        if level >= max_depth:
+            replies = cur.get("replies") or []
+            if replies:
+                child_prefix = prefix + ("   " if is_last else "│  ")
+                lines.append(f"{child_prefix}└─ …")
+            return
+
+        replies = cur.get("replies") or []
+        if mine_only:
+            replies = [r for r in replies if _node_has_author_did(r, my_did)]
+
+        for i, child in enumerate(replies):
+            child_is_last = i == (len(replies) - 1)
+            child_prefix = prefix + ("   " if is_last else "│  ")
+            walk(child, prefix=child_prefix, is_last=child_is_last, level=level + 1)
+
+    walk(node)
+    return lines
+
+
+def cmd_tree(args) -> int:
+    """Render a visual ASCII tree for a thread URL/URI."""
+    print("🔗 Connecting to BlueSky...")
+    pds, did, jwt, _ = get_session()
+
+    uri = _thread_target_to_uri(getattr(args, "target", ""))
+    if not uri:
+        print("❌ Invalid target. Use a BlueSky post URL or at:// URI")
+        return 1
+
+    depth = int(getattr(args, "depth", 6))
+    snippet = int(getattr(args, "snippet", 90))
+    mine_only = bool(getattr(args, "mine_only", False))
+
+    thread = get_thread(pds, jwt, uri, depth=depth)
+    if not thread or not (thread.get("post") or {}).get("uri"):
+        print(f"❌ Could not fetch thread: {getattr(args, 'target', uri)}")
+        return 1
+
+    lines = _render_thread_tree(
+        thread,
+        my_did=did,
+        mine_only=mine_only,
+        snippet_len=max(20, snippet),
+        max_depth=max(1, depth),
+    )
+    if not lines:
+        print("❌ Thread loaded but no renderable posts found")
+        return 1
+
+    print("\n".join(lines))
+    return 0
+
+
 def cmd_backoff_check(args) -> int:
     """
     Check if we should run a thread check based on backoff state.
@@ -491,6 +588,8 @@ def run(args) -> int:
         return cmd_unwatch(args)
     elif args.threads_command == "branches":
         return cmd_check_branches(args)
+    elif args.threads_command == "tree":
+        return cmd_tree(args)
     elif args.threads_command == "backoff-check":
         return cmd_backoff_check(args)
     elif args.threads_command == "backoff-update":
