@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import json
 import re
+import sqlite3
 import subprocess
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
 
 from .http import requests
 
@@ -48,6 +50,52 @@ def _maybe(prob: float) -> bool:
         return r.returncode == 0
     except Exception:
         return False
+
+
+def _relationship_follow_probability(total_interactions: int) -> float:
+    """Return probabilistic follow chance based on interaction depth."""
+    n = int(total_interactions or 0)
+    if n > 50:
+        return 0.3
+    if n > 10:
+        return 0.1
+    return 0.0
+
+
+def _is_negative_tone(tone: str | None) -> bool:
+    t = (tone or "").strip().lower()
+    if not t:
+        return False
+    negative_markers = [
+        "negative", "hostile", "antagon", "toxic", "conflict", "aggressive", "blocked", "avoid",
+    ]
+    return any(m in t for m in negative_markers)
+
+
+def _load_relationship_tones() -> dict[str, str]:
+    """Best-effort load of actor relationship_tone from local DB."""
+    try:
+        from .auth import load_from_pass
+        from .storage.db import open_db
+
+        env = load_from_pass() or {}
+        account_handle = (env.get("BSKY_HANDLE") or env.get("BSKY_EMAIL") or "").strip() or "default"
+        try:
+            conn = open_db(account_handle)
+        except Exception:
+            base = Path.home() / ".bsky-cli" / "accounts"
+            dbs = sorted(base.glob("*/bsky.db"))
+            if len(dbs) != 1:
+                return {}
+            conn = sqlite3.connect(dbs[0])
+            conn.row_factory = sqlite3.Row
+
+        rows = conn.execute(
+            "SELECT did, relationship_tone FROM actors WHERE relationship_tone IS NOT NULL AND relationship_tone <> ''"
+        ).fetchall()
+        return {str(r["did"]): str(r["relationship_tone"]) for r in rows}
+    except Exception:
+        return {}
 
 
 def _generate_reply_llm(*, their_text: str, our_text: str | None, history: str, author_handle: str) -> str | None:
@@ -205,6 +253,7 @@ def run_scored(args, pds: str, did: str, jwt: str) -> int:
     )
 
     # Score + decide
+    tone_by_did = _load_relationship_tones()
     scored_rows = []
     for n in notifications:
         author = n.get("author", {})
@@ -225,6 +274,8 @@ def run_scored(args, pds: str, did: str, jwt: str) -> int:
                 "score": s,
                 "actions": acts,
                 "url": url,
+                "rel_total": rel_total,
+                "relationship_tone": tone_by_did.get(author.get("did", ""), ""),
             }
         )
 
@@ -274,6 +325,21 @@ def run_scored(args, pds: str, did: str, jwt: str) -> int:
                 budgets.follows += 1
             elif budgets.follows >= budgets.max_follows:
                 reached.append("follows")
+
+        # Relationship-based probabilistic follow on reply/repost activity.
+        if reason in {"reply", "repost"}:
+            rel_total = int(r.get("rel_total") or 0)
+            rel_tone = r.get("relationship_tone") or ""
+            prob = _relationship_follow_probability(rel_total)
+            prof = r.get("profile") or {}
+            already_following = bool(((prof.get("viewer") or {}).get("following")))
+            if prob > 0 and not _is_negative_tone(rel_tone) and not already_following:
+                if budgets.follows < budgets.max_follows:
+                    if _maybe(prob):
+                        follow_handle(prof.get("handle") or (n.get("author") or {}).get("handle") or "")
+                        budgets.follows += 1
+                else:
+                    reached.append("follows")
 
         url = r.get("url")
         if not url:
