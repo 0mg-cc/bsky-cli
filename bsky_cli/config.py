@@ -86,6 +86,13 @@ DEFAULT_CONFIG = {
     "api": {
         "calls_per_minute": 60,        # Client-side request cap for BlueSky API
     },
+
+    # Public truth grounding (optional, for publishing prompts)
+    "public_truth": {
+        "enabled": False,
+        # Optional custom file path. If null, default lookup paths are used.
+        "path": None,
+    },
 }
 
 # Config file locations (first found wins)
@@ -238,6 +245,12 @@ interlocutors:
 # API settings
 api:
   calls_per_minute: 60           # Client-side API cap (logs when throttled)
+
+# Optional public truth grounding for LLM-generated publishing content
+# Disabled by default for third-party installs.
+public_truth:
+  enabled: false
+  # path: ~/personas/echo/PUBLIC_ABOUT_ME.md
 """
     
     config_path.write_text(example)

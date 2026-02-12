@@ -222,6 +222,18 @@ engage:
 
 All settings are optional — sensible defaults work out of the box.
 
+### Optional: public truth grounding for LLM publishing
+
+For third-party users, this is **opt-in** (disabled by default). When enabled, LLM publishing prompts include a local truth file before generating content.
+
+```yaml
+public_truth:
+  enabled: true
+  path: ~/personas/echo/PUBLIC_ABOUT_ME.md  # optional custom path
+```
+
+Used by LLM-powered publishing flows (`organic`, `engage`, `appreciate`, `notify --execute` reply/quote generation).
+
 ## Runtime Guards
 
 Commands that scan your follow list (`engage`, `appreciate`, `discover`) support `--max-runtime-seconds` to prevent runaway execution:
