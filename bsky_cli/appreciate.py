@@ -90,11 +90,19 @@ def save_state(state: dict) -> None:
 # POST FETCHING (reused from engage)
 # ============================================================================
 
-def get_follows(pds: str, jwt: str, did: str) -> list[dict]:
-    """Get list of accounts we follow."""
+def get_follows(pds: str, jwt: str, did: str,
+                guard: "RuntimeGuard | None" = None) -> list[dict]:
+    """Get list of accounts we follow.
+
+    When *guard* is given, the runtime budget is checked between
+    pagination requests so that slow follow-list fetches don't blow
+    the ``--max-runtime-seconds`` budget.
+    """
     follows = []
     cursor = None
     while True:
+        if guard and guard.check("collect"):
+            return follows  # partial results
         params = {"actor": did, "limit": 100}
         if cursor:
             params["cursor"] = cursor
@@ -108,6 +116,8 @@ def get_follows(pds: str, jwt: str, did: str) -> list[dict]:
             break
         data = r.json()
         follows.extend(data.get("follows", []))
+        if guard and guard.check("collect"):
+            return follows
         cursor = data.get("cursor")
         if not cursor:
             break
@@ -358,7 +368,10 @@ def run(args) -> int:
     if guard.check("collect"):
         return TIMEOUT_EXIT_CODE
     print("📋 Fetching follows...")
-    follows = get_follows(pds, jwt, did)
+    follows = get_follows(pds, jwt, did, guard=guard)
+    if guard.check("collect"):
+        print(f"✓ Following {len(follows)} accounts (partial — timed out)")
+        return TIMEOUT_EXIT_CODE
     print(f"✓ Following {len(follows)} accounts")
     
     print(f"📰 Fetching recent posts (last {hours}h)...")
