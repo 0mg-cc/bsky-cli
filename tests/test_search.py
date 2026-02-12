@@ -224,3 +224,59 @@ def test_search_run_json_outputs_raw_posts(monkeypatch, capsys):
     out = capsys.readouterr().out
     data = json.loads(out)
     assert data[0]["record"]["text"] == "hello"
+
+
+class TestSearchErrorHandling:
+    """Tests for search error handling (issue #2)."""
+
+    def test_invalid_author_gives_clean_error(self):
+        """Should give clean error for invalid author handle, not raw traceback."""
+        import requests as real_requests
+
+        mock_response = MagicMock()
+        mock_response.status_code = 400
+        mock_response.json.return_value = {
+            "message": "invalid Handle for 'author': handle not found"
+        }
+        mock_response.raise_for_status.side_effect = real_requests.HTTPError(
+            "400 Client Error", response=mock_response
+        )
+
+        with patch('requests.get') as mock_get:
+            mock_get.return_value = mock_response
+            with pytest.raises(SystemExit, match="Search failed for author"):
+                search_posts(
+                    "https://bsky.social", "jwt", "query",
+                    author="nonexistent.invalid.handle"
+                )
+
+    def test_400_without_author_gives_generic_error(self):
+        """Should give generic clean error for 400 without author filter."""
+        import requests as real_requests
+
+        mock_response = MagicMock()
+        mock_response.status_code = 400
+        mock_response.json.return_value = {"message": "bad query"}
+        mock_response.raise_for_status.side_effect = real_requests.HTTPError(
+            "400 Client Error", response=mock_response
+        )
+
+        with patch('requests.get') as mock_get:
+            mock_get.return_value = mock_response
+            with pytest.raises(SystemExit, match="Search failed.*bad query"):
+                search_posts("https://bsky.social", "jwt", "query")
+
+    def test_non_400_errors_still_raise(self):
+        """Should re-raise non-400 HTTP errors unchanged."""
+        import requests as real_requests
+
+        mock_response = MagicMock()
+        mock_response.status_code = 500
+        mock_response.raise_for_status.side_effect = real_requests.HTTPError(
+            "500 Server Error", response=mock_response
+        )
+
+        with patch('requests.get') as mock_get:
+            mock_get.return_value = mock_response
+            with pytest.raises(real_requests.HTTPError):
+                search_posts("https://bsky.social", "jwt", "query")

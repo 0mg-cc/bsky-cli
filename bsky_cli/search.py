@@ -59,13 +59,29 @@ def search_posts(
         if until_dt:
             params["until"] = until_dt.isoformat().replace("+00:00", "Z")
     
-    r = requests.get(
-        f"{pds}/xrpc/app.bsky.feed.searchPosts",
-        headers={"Authorization": f"Bearer {jwt}"},
-        params=params,
-        timeout=30
-    )
-    r.raise_for_status()
+    try:
+        r = requests.get(
+            f"{pds}/xrpc/app.bsky.feed.searchPosts",
+            headers={"Authorization": f"Bearer {jwt}"},
+            params=params,
+            timeout=30
+        )
+        r.raise_for_status()
+    except requests.HTTPError as e:
+        if e.response is not None and e.response.status_code == 400:
+            # Common cause: invalid author handle
+            detail = ""
+            try:
+                detail = e.response.json().get("message", "")
+            except Exception:
+                pass
+            if author and detail:
+                raise SystemExit(f"❌ Search failed for author '{author}': {detail}")
+            elif author:
+                raise SystemExit(f"❌ Search failed: author '{author}' not found or invalid handle")
+            else:
+                raise SystemExit(f"❌ Search failed: bad request — {detail or 'check your query'}")
+        raise
     return r.json().get("posts", [])
 
 
