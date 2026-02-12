@@ -251,6 +251,7 @@ def run_scored(args, pds: str, did: str, jwt: str) -> int:
         max_likes=int(getattr(args, "max_likes", None) or get("notify.budgets.max_likes", 30)),
         max_follows=int(getattr(args, "max_follows", None) or get("notify.budgets.max_follows", 5)),
     )
+    relationship_follow_enabled = bool(get("notify.relationship_follow.enabled", False))
 
     # Score + decide
     tone_by_did = _load_relationship_tones()
@@ -327,7 +328,7 @@ def run_scored(args, pds: str, did: str, jwt: str) -> int:
                 reached.append("follows")
 
         # Relationship-based probabilistic follow on reply/repost activity.
-        if reason in {"reply", "repost"}:
+        if relationship_follow_enabled and reason in {"reply", "repost"}:
             rel_total = int(r.get("rel_total") or 0)
             rel_tone = r.get("relationship_tone") or ""
             prob = _relationship_follow_probability(rel_total)
