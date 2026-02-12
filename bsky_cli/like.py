@@ -115,46 +115,54 @@ def unlike_post(pds: str, jwt: str, did: str, post_uri: str) -> bool:
     Returns:
         True if successful
     """
-    # First, find our like record
-    r = requests.get(
-        f"{pds}/xrpc/app.bsky.feed.getLikes",
-        params={"uri": post_uri, "limit": 100},
-        headers={"Authorization": f"Bearer {jwt}"},
-        timeout=15
-    )
-    
-    if r.status_code != 200:
-        print(f"Could not fetch likes: {r.status_code}")
-        return False
-    
-    likes = r.json().get("likes", [])
     our_like = None
-    for like in likes:
-        if like.get("actor", {}).get("did") == did:
-            # Found our like - need to get the record key
-            # The like URI is at://did/app.bsky.feed.like/rkey
-            like_uri = like.get("uri", "")
+
+    # Prefer viewer.like from getPosts (works even on high-like-count posts)
+    r = requests.get(
+        f"{pds}/xrpc/app.bsky.feed.getPosts",
+        params={"uris": post_uri},
+        headers={"Authorization": f"Bearer {jwt}"},
+        timeout=15,
+    )
+    if r.status_code == 200:
+        posts = r.json().get("posts", [])
+        if posts:
+            like_uri = posts[0].get("viewer", {}).get("like")
             if like_uri:
-                rkey = like_uri.split("/")[-1]
-                our_like = rkey
-                break
-    
+                our_like = like_uri.split("/")[-1]
+
+    # Fallback: scan likes list
+    if not our_like:
+        r = requests.get(
+            f"{pds}/xrpc/app.bsky.feed.getLikes",
+            params={"uri": post_uri, "limit": 100},
+            headers={"Authorization": f"Bearer {jwt}"},
+            timeout=15,
+        )
+
+        if r.status_code != 200:
+            print(f"Could not fetch likes: {r.status_code}")
+            return False
+
+        likes = r.json().get("likes", [])
+        for like in likes:
+            if like.get("actor", {}).get("did") == did:
+                like_uri = like.get("uri", "")
+                if like_uri:
+                    our_like = like_uri.split("/")[-1]
+                    break
+
     if not our_like:
         print("You haven't liked this post")
         return False
-    
-    # Delete the like record
+
     r = requests.post(
         f"{pds}/xrpc/com.atproto.repo.deleteRecord",
         headers={"Authorization": f"Bearer {jwt}", "Content-Type": "application/json"},
-        json={
-            "repo": did,
-            "collection": "app.bsky.feed.like",
-            "rkey": our_like
-        },
-        timeout=30
+        json={"repo": did, "collection": "app.bsky.feed.like", "rkey": our_like},
+        timeout=30,
     )
-    
+
     return r.status_code == 200
 
 
