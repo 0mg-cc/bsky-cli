@@ -372,7 +372,6 @@ def run(args) -> int:
     if len(text) > 300:
         raise SystemExit(f"Post too long ({len(text)} chars, max 300)")
 
-    facets = detect_facets(text)
     quote_url = getattr(args, 'quote', None)
 
     if args.dry_run:
@@ -380,6 +379,7 @@ def run(args) -> int:
         return 0
 
     pds, did, jwt, _ = get_session()
+    facets = detect_facets(text, pds=pds)
 
     embed = None
     

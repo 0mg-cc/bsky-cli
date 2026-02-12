@@ -2,6 +2,7 @@
 import pytest
 from unittest.mock import patch, MagicMock
 
+from bsky_cli import post as post_mod
 from bsky_cli.post import (
     detect_facets,
     resolve_post,
@@ -160,3 +161,28 @@ def test_detect_facets_mixed_multibyte():
             assert extracted.startswith("https://")
         else:
             assert extracted.startswith("#")
+
+
+def test_post_run_passes_pds_to_detect_facets_for_mentions(monkeypatch):
+    """`bsky post` must pass pds so @handles become mention facets."""
+    seen = {"pds": None}
+
+    def fake_detect(text, *, pds=None):
+        seen["pds"] = pds
+        return [{"index": {"byteStart": 0, "byteEnd": 1}, "features": []}]
+
+    monkeypatch.setattr(post_mod, "detect_facets", fake_detect)
+    monkeypatch.setattr(post_mod, "get_session", lambda: ("https://pds.example", "did:plc:me", "jwt", None))
+    monkeypatch.setattr(post_mod, "create_post", lambda *a, **k: {"uri": "at://did:plc:me/app.bsky.feed.post/abc"})
+
+    args = type("A", (), {
+        "text": "hi @penny.hailey.at",
+        "embed": None,
+        "quote": None,
+        "allow_repeat": True,
+        "dry_run": False,
+    })()
+
+    rc = post_mod.run(args)
+    assert rc == 0
+    assert seen["pds"] == "https://pds.example"
