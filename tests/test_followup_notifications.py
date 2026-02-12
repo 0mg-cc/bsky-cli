@@ -3,7 +3,7 @@ from bsky_cli import post as post_mod
 from bsky_cli import reply as reply_mod
 
 
-def test_schedule_notification_followups_spawns_expected_delays(monkeypatch):
+def test_schedule_notification_followups_spawns_worker(monkeypatch):
     calls = []
 
     class DummyPopen:
@@ -14,12 +14,33 @@ def test_schedule_notification_followups_spawns_expected_delays(monkeypatch):
 
     fup.schedule_notification_followups()
 
-    assert len(calls) == 4
-    joined = "\n".join(c[0][2] for c in calls)
-    assert "sleep 120" in joined
-    assert "sleep 300" in joined
-    assert "sleep 600" in joined
-    assert "sleep 900" in joined
+    assert len(calls) == 1
+    cmd = calls[0][0][2]
+    assert "run_followup_worker((120,300,600,900" in cmd
+
+
+def test_followup_worker_restarts_from_2min_on_new_reply(monkeypatch):
+    sleeps = []
+    monkeypatch.setattr(fup.time, "sleep", lambda s: sleeps.append(s))
+
+    # Step 1 sees a new reply -> restart. Then completes full 4-step pass.
+    seq = iter([
+        [{"reason": "reply", "uri": "at://r1"}],
+        [],
+        [],
+        [],
+        [],
+    ])
+    monkeypatch.setattr(fup, "_fetch_notifications", lambda limit=60: next(seq, []))
+
+    runs = {"n": 0}
+    monkeypatch.setattr(fup, "_run_notify_execute", lambda: runs.__setitem__("n", runs["n"] + 1))
+
+    fup.run_followup_worker((2, 5, 10, 15), max_restarts=3)
+
+    # 1st check at +2, restart, then +2/+5/+10/+15
+    assert sleeps == [2, 2, 5, 10, 15]
+    assert runs["n"] == 5
 
 
 def test_post_run_triggers_followup_notifications(monkeypatch):
