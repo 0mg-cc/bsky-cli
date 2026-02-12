@@ -216,3 +216,50 @@ def test_people_enrich_execute_saves_snapshots(monkeypatch, capsys):
 
     kinds = [r[0] for r in conn.execute("SELECT kind FROM actor_auto_notes WHERE did=? ORDER BY kind", ("did:plc:alice",)).fetchall()]
     assert kinds == ["interests", "notes", "tone"]
+
+
+def test_people_enrich_list_mode_supports_max_dry_run(monkeypatch, capsys):
+    from bsky_cli import people
+
+    conn = _mk_conn()
+    people.ensure_schema(conn)
+    monkeypatch.setattr(people, "_open_default_db", lambda: (conn, "echo.0mg.cc"))
+
+    conn.execute("INSERT INTO actors(did, handle, display_name) VALUES (?,?,?)", ("did:plc:alice", "alice.bsky.social", "Alice"))
+    conn.execute("INSERT INTO actors(did, handle, display_name) VALUES (?,?,?)", ("did:plc:bob", "bob.bsky.social", "Bob"))
+    conn.execute("INSERT INTO interactions(actor_did, date, type, post_uri, our_text, their_text) VALUES (?,?,?,?,?,?)", ("did:plc:alice", "2026-02-10", "reply_to_them", None, "hi", "yo"))
+    conn.execute("INSERT INTO interactions(actor_did, date, type, post_uri, our_text, their_text) VALUES (?,?,?,?,?,?)", ("did:plc:bob", "2026-02-09", "reply_to_them", None, "hi", "yo"))
+    conn.commit()
+
+    called = {"n": 0}
+
+    def _fake_llm(**kwargs):
+        called["n"] += 1
+        return {"notes_auto": "note", "interests_auto": "tech", "relationship_tone": "friendly"}
+
+    monkeypatch.setattr(people, "_llm_enrich_person", _fake_llm)
+
+    args = SimpleNamespace(
+        stats=False,
+        handle=None,
+        regulars=False,
+        limit=20,
+        set_note=None,
+        add_tag=None,
+        remove_tag=None,
+        enrich=True,
+        execute=False,
+        dry_run=True,
+        max=1,
+        force=True,
+        min_age_hours=72,
+        json=False,
+    )
+
+    rc = people.run(args)
+    assert rc == 0
+
+    out = capsys.readouterr().out
+    assert "[DRY RUN] Would enrich 1 people" in out
+    assert "@alice.bsky.social" in out
+    assert called["n"] == 1

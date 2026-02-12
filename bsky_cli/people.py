@@ -526,6 +526,82 @@ def run(args) -> int:
 
     people.sort(key=lambda x: x.get("last") or "", reverse=True)
 
+    if getattr(args, "enrich", False):
+        execute = bool(getattr(args, "execute", False))
+        dry_run = bool(getattr(args, "dry_run", False) or not execute)
+        force = bool(getattr(args, "force", False))
+        mah = getattr(args, "min_age_hours", 72)
+        min_age_hours = 72 if mah is None else int(mah)
+        max_people = getattr(args, "max", None)
+        max_people = int(max_people) if max_people is not None else None
+
+        candidates = people if max_people is None else people[:max_people]
+        if dry_run:
+            print(f"[DRY RUN] Would enrich {len(candidates)} people:")
+        else:
+            print(f"Enriching {len(candidates)} people:")
+
+        for p in candidates:
+            did = str(p["did"])
+            handle = str(p["handle"])
+            row = conn.execute(
+                "SELECT display_name, notes_manual FROM actors WHERE did=?",
+                (did,),
+            ).fetchone()
+            display_name = str((row["display_name"] if row else "") or "")
+            notes_manual = str((row["notes_manual"] if row else "") or "")
+
+            skip, last = _should_skip_enrich(conn, did=did, min_age_hours=min_age_hours, force=force)
+            if skip:
+                print(f"  @{handle} — skipped (last auto update: {last})")
+                continue
+
+            tags = [
+                str(t["tag"])
+                for t in conn.execute("SELECT tag FROM actor_tags WHERE did=? ORDER BY tag", (did,)).fetchall()
+            ]
+            recent_dms = [
+                dict(r)
+                for r in conn.execute(
+                    "SELECT sent_at, direction, text FROM dm_messages WHERE actor_did=? ORDER BY sent_at DESC LIMIT 10",
+                    (did,),
+                ).fetchall()
+            ]
+            recent_inter = [
+                dict(r)
+                for r in conn.execute(
+                    "SELECT date, type, our_text, their_text FROM interactions WHERE actor_did=? ORDER BY date DESC, id DESC LIMIT 10",
+                    (did,),
+                ).fetchall()
+            ]
+
+            data = _llm_enrich_person(
+                handle=handle,
+                display_name=display_name,
+                tags=tags,
+                notes_manual=notes_manual,
+                recent_dms=recent_dms,
+                recent_interactions=recent_inter,
+            )
+
+            notes_auto = str(data.get("notes_auto") or "").strip()
+            interests_auto = str(data.get("interests_auto") or "").strip()
+            tone_auto = str(data.get("relationship_tone") or "").strip()
+
+            print(f"  @{handle}")
+
+            if execute:
+                if notes_auto:
+                    _save_auto_snapshot(conn, did=did, kind="notes", content=notes_auto)
+                if interests_auto:
+                    _save_auto_snapshot(conn, did=did, kind="interests", content=interests_auto)
+                if tone_auto:
+                    _save_auto_snapshot(conn, did=did, kind="tone", content=tone_auto)
+
+        if execute:
+            print("✓ Enrich data saved")
+        return 0
+
     if getattr(args, "regulars", False):
         thresh = get_regular_threshold()
         people = [p for p in people if int(p["total"]) >= thresh]
@@ -575,6 +651,8 @@ def main():
     # Auto-enrich (opt-in)
     parser.add_argument("--enrich", action="store_true", help="Generate/update auto notes (dry-run by default)")
     parser.add_argument("--execute", action="store_true", help="Persist enrich output to DB")
+    parser.add_argument("--dry-run", action="store_true", help="Preview enrich output without writing to DB")
+    parser.add_argument("--max", type=int, default=None, help="Max people to enrich in list mode")
     parser.add_argument("--force", action="store_true", help="Ignore enrich cooldown")
     parser.add_argument("--min-age-hours", type=int, default=72, help="Min hours between enrich runs (default: 72)")
     args = parser.parse_args()

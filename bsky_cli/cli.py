@@ -511,6 +511,8 @@ BADGES IN NOTIFICATIONS:
 
     people_parser.add_argument("--enrich", action="store_true", help="Generate/update auto notes (dry-run by default)")
     people_parser.add_argument("--execute", action="store_true", help="Persist enrich output to DB")
+    people_parser.add_argument("--dry-run", action="store_true", help="Preview enrich output without writing to DB")
+    people_parser.add_argument("--max", type=int, default=None, help="Max people to enrich in list mode")
     people_parser.add_argument("--force", action="store_true", help="Ignore enrich cooldown")
     people_parser.add_argument("--min-age-hours", type=int, default=72, help="Min hours between enrich runs (default: 72)")
 
