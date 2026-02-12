@@ -50,7 +50,7 @@ def test_engage_prints_phase_progression(monkeypatch, capsys):
     monkeypatch.setattr(engage, "load_state", lambda: {"replied_posts": [], "replied_accounts_today": []})
     monkeypatch.setattr(engage, "load_conversations", lambda: {})
     monkeypatch.setattr(engage, "create_default_pipeline", lambda did: SimpleNamespace(process=lambda posts, state: posts))
-    monkeypatch.setattr(engage, "get_follows", lambda pds, jwt, did: [])
+    monkeypatch.setattr(engage, "get_follows", lambda pds, jwt, did, **_kw: [])
     monkeypatch.setattr(engage, "get_replies_to_our_posts", lambda *a, **k: [])
 
     rc = engage.run(SimpleNamespace(dry_run=True, hours=12, max_runtime_seconds=30))
@@ -144,7 +144,7 @@ def test_engage_saves_state_on_act_timeout(monkeypatch, capsys):
     monkeypatch.setattr(engage, "load_conversations", lambda: {})
     monkeypatch.setattr(engage, "create_default_pipeline", lambda did: SimpleNamespace(process=lambda posts, state: posts))
     # Provide one follow so the collect loop runs
-    monkeypatch.setattr(engage, "get_follows", lambda pds, jwt, did: [{"did": "did:plc:a", "handle": "a.test"}])
+    monkeypatch.setattr(engage, "get_follows", lambda pds, jwt, did, **_kw: [{"did": "did:plc:a", "handle": "a.test"}])
     monkeypatch.setattr(engage, "get_author_feed", lambda pds, jwt, actor, limit=10: [])
     monkeypatch.setattr(engage, "filter_recent_posts", lambda feed, hours=12: [fake_post])
     monkeypatch.setattr(engage, "get_replies_to_our_posts", lambda *a, **k: [])
@@ -178,7 +178,7 @@ def test_appreciate_saves_state_on_act_timeout(monkeypatch, capsys):
     monkeypatch.setattr(appreciate, "get_session", _fake_session)
     monkeypatch.setattr(appreciate, "load_state", lambda: {"liked_posts": [], "quoted_posts": []})
     # Provide one follow + feed data so collect phase succeeds
-    monkeypatch.setattr(appreciate, "get_follows", lambda pds, jwt, did: [{"did": "did:plc:a", "handle": "a.test"}])
+    monkeypatch.setattr(appreciate, "get_follows", lambda pds, jwt, did, **_kw: [{"did": "did:plc:a", "handle": "a.test"}])
     monkeypatch.setattr(appreciate, "get_author_feed", lambda pds, jwt, did, limit=30: [])
     monkeypatch.setattr(appreciate, "filter_recent_posts", lambda feed, hours=12: [
         {"uri": "at://did:plc:a/app.bsky.feed.post/1", "cid": "cid1",
@@ -246,6 +246,102 @@ def test_discover_saves_state_on_timeout(monkeypatch, capsys):
     assert rc == discover.TIMEOUT_EXIT_CODE
     assert saved["state"], "discover must save state on timeout"
     assert "partial state saved" in capsys.readouterr().out.lower()
+
+
+def test_engage_get_follows_respects_guard(monkeypatch, capsys):
+    """Issue #25: get_follows in engage.py must check guard between pagination pages."""
+    from bsky_cli.runtime_guard import RuntimeGuard
+
+    # Guard that times out immediately
+    guard = RuntimeGuard(0)
+
+    # Mock requests so the actual HTTP call never happens
+    import types
+    call_count = {"n": 0}
+
+    def fake_get(url, **kwargs):
+        call_count["n"] += 1
+        resp = types.SimpleNamespace()
+        resp.status_code = 200
+        resp.raise_for_status = lambda: None
+        resp.json = lambda: {"follows": [{"did": f"did:plc:{call_count['n']}", "handle": f"u{call_count['n']}.test"}], "cursor": "next"}
+        return resp
+
+    monkeypatch.setattr(engage.requests, "get", fake_get)
+
+    result = engage.get_follows("https://pds.test", "jwt", "did:plc:me", guard=guard)
+
+    # Should return early (empty or partial) because guard fires on first check
+    assert len(result) <= 1  # at most 1 page before guard fires
+    out = capsys.readouterr().out
+    assert "Timed out" in out
+
+
+def test_appreciate_get_follows_respects_guard(monkeypatch, capsys):
+    """Issue #25: get_follows in appreciate.py must check guard between pagination pages."""
+    from bsky_cli.runtime_guard import RuntimeGuard
+
+    guard = RuntimeGuard(0)
+
+    import types
+    call_count = {"n": 0}
+
+    def fake_get(url, **kwargs):
+        call_count["n"] += 1
+        resp = types.SimpleNamespace()
+        resp.status_code = 200
+        resp.raise_for_status = lambda: None
+        resp.json = lambda: {"follows": [{"did": f"did:plc:{call_count['n']}", "handle": f"u{call_count['n']}.test"}], "cursor": "next"}
+        return resp
+
+    monkeypatch.setattr(appreciate.requests, "get", fake_get)
+
+    result = appreciate.get_follows("https://pds.test", "jwt", "did:plc:me", guard=guard)
+
+    assert len(result) <= 1
+    out = capsys.readouterr().out
+    assert "Timed out" in out
+
+
+def test_engage_collect_timeout_during_get_follows_pagination(monkeypatch, capsys):
+    """Issue #25: engage run() should return TIMEOUT_EXIT_CODE when get_follows
+    times out mid-pagination (not just at the top of the collect loop)."""
+
+    class SlowPaginationGuard:
+        """Allows a few checks, then times out during get_follows pagination."""
+        def __init__(self, _seconds=None):
+            self.calls = 0
+
+        def check(self, phase):
+            self.calls += 1
+            # First check (pre-collect in run()) passes, 2nd check (inside get_follows) passes,
+            # 3rd check (post-page inside get_follows) → timeout
+            if self.calls >= 3:
+                print(f"⏱️ Timed out after 30s during phase: {phase}")
+                return True
+            return False
+
+    monkeypatch.setattr(engage, "RuntimeGuard", SlowPaginationGuard)
+    monkeypatch.setattr(engage, "get_session", _fake_session)
+    monkeypatch.setattr(engage, "load_state", lambda: {"replied_posts": [], "replied_accounts_today": []})
+    monkeypatch.setattr(engage, "load_conversations", lambda: {})
+
+    import types
+    def fake_get(url, **kwargs):
+        resp = types.SimpleNamespace()
+        resp.status_code = 200
+        resp.raise_for_status = lambda: None
+        resp.json = lambda: {"follows": [{"did": "did:plc:a", "handle": "a.test"}], "cursor": "next"}
+        return resp
+
+    monkeypatch.setattr(engage.requests, "get", fake_get)
+
+    rc = engage.run(SimpleNamespace(dry_run=True, hours=12, max_runtime_seconds=30))
+
+    assert rc == engage.TIMEOUT_EXIT_CODE
+    out = capsys.readouterr().out
+    assert "Timed out" in out
+    assert "partial" in out.lower()
 
 
 def test_discover_reposts_flushes_state_before_timeout(monkeypatch, capsys):
