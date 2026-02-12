@@ -25,6 +25,19 @@ This spec consolidates what should be generalized next, why, and how.
 - Breaking existing command UX.
 - Rewriting storage layer in this batch.
 
+## Local-only boundaries (must remain local/profile-scoped)
+
+These are explicitly out of core-default behavior and should remain operator-local (or opt-in profile overlays):
+
+- Persona voice and editorial stance (style, political/cultural framing)
+- Relationship policy (who to prioritize, ping, follow, mute)
+- Risk posture (action budgets, cadence aggressiveness, automation appetite)
+- Public truth file content and disclosure boundaries (`PUBLIC_ABOUT_ME` semantics)
+- Secret paths and infra-specific filesystem assumptions
+- Identity-specific topic sets and narrative framing
+
+Design rule: **generic engine + local policy/profile**. Core ships safe defaults; identity-specific behavior is configured per operator.
+
 ---
 
 ## Candidate patterns to generalize
@@ -267,6 +280,9 @@ Mapping to default budgets, delays, and selection strictness.
 
 - **Provider abstraction bugs**
   - Mitigation: contract tests against provider adapters.
+
+- **Over-generalizing identity-specific behavior into core**
+  - Mitigation: enforce local-only boundaries (persona, relationships, disclosure policy) and keep them profile-scoped.
 
 ---
 
