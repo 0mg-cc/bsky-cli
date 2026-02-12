@@ -161,7 +161,12 @@ def run(args) -> int:
     reposts = [n for n in notifications if n.get("reason") == "repost"]
     follows = [n for n in notifications if n.get("reason") == "follow"]
     
-    print(f"=== BlueSky Notifications ({len(notifications)} new) ===\n")
+    header_count = (
+        f"{len(notifications)} notifications, all recent"
+        if args.all
+        else f"{len(notifications)} new"
+    )
+    print(f"=== BlueSky Notifications ({header_count}) ===\n")
     
     # Show important ones in full
     important = replies + mentions + quotes
