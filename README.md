@@ -218,9 +218,22 @@ organic:
 engage:
   hours: 12
   max_per_account: 1
+
+notify:
+  budgets:
+    max_replies: 10
+    max_likes: 30
+    max_follows: 5
+  relationship_follow:
+    enabled: false  # opt-in; default is disabled
 ```
 
 All settings are optional — sensible defaults work out of the box.
+
+When `notify.relationship_follow.enabled` is true, `notify --execute` can trigger probabilistic follows on `reply`/`repost` interactions:
+- >10 prior interactions: `maybe.sh 0.1`
+- >50 prior interactions: `maybe.sh 0.3`
+- blocked when `relationship_tone` is negative
 
 ### Optional: public truth grounding for LLM publishing
 
