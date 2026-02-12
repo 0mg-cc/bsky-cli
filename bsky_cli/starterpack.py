@@ -32,6 +32,17 @@ def create_starterpack(pds: str, jwt: str, did: str, name: str, list_uri: str, d
     return r.json() if r.status_code == 200 else None
 
 
+def delete_starterpack(pds: str, jwt: str, did: str, starterpack_uri: str) -> bool:
+    rkey = starterpack_uri.split("/")[-1]
+    r = requests.post(
+        f"{pds}/xrpc/com.atproto.repo.deleteRecord",
+        headers={"Authorization": f"Bearer {jwt}", "Content-Type": "application/json"},
+        json={"repo": did, "collection": "app.bsky.graph.starterpack", "rkey": rkey},
+        timeout=30,
+    )
+    return r.status_code == 200
+
+
 def list_starterpacks(pds: str, jwt: str, actor: str) -> list[dict]:
     r = requests.get(
         f"{pds}/xrpc/app.bsky.graph.getActorStarterPacks",
@@ -63,6 +74,31 @@ def run(args) -> int:
         return 0
 
     packs = list_starterpacks(pds, jwt, did)
+
+    if args.starterpack_command == "delete":
+        target = args.target
+        if target.startswith("at://"):
+            uri = target
+            display = target
+        else:
+            found = next((p for p in packs if p.get("record", {}).get("name") == target), None)
+            if not found:
+                print(f"✗ Starter pack not found: {target}")
+                return 1
+            uri = found.get("uri", "")
+            display = target
+
+        if not uri:
+            print("✗ Starter pack URI missing")
+            return 1
+
+        ok = delete_starterpack(pds, jwt, did, uri)
+        if not ok:
+            print("✗ Failed to delete starter pack")
+            return 1
+        print(f"✓ Deleted starter pack: {display}")
+        return 0
+
     if not packs:
         print("No starter packs found.")
         return 0

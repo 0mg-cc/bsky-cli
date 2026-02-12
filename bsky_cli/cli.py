@@ -387,6 +387,11 @@ EXAMPLE:
     lists_add = lists_sub.add_parser("add", help="Add account to a list")
     lists_add.add_argument("list_name", help="List name")
     lists_add.add_argument("handle", help="Account handle (with or without @)")
+    lists_remove = lists_sub.add_parser("remove", help="Remove account from a list")
+    lists_remove.add_argument("list_name", help="List name")
+    lists_remove.add_argument("handle", help="Account handle (with or without @)")
+    lists_delete = lists_sub.add_parser("delete", help="Delete a list")
+    lists_delete.add_argument("list_name", help="List name")
     lists_show = lists_sub.add_parser("show", help="Show list members")
     lists_show.add_argument("list_name", help="List name")
 
@@ -401,6 +406,8 @@ EXAMPLE:
     sp_create.add_argument("name", help="Starter pack name")
     sp_create.add_argument("--list", dest="list_name", required=True, help="Existing list name")
     sp_create.add_argument("--description", help="Starter pack description")
+    sp_delete = sp_sub.add_parser("delete", help="Delete a starter pack by name or at:// URI")
+    sp_delete.add_argument("target", help="Starter pack name or at:// URI")
 
     # threads
     threads_parser = subparsers.add_parser(
