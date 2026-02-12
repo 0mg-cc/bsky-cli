@@ -188,7 +188,7 @@ def _query_history_fts(
 
 
 def run(args) -> int:
-    handle = getattr(args, "handle", None)
+    handle = (getattr(args, "handle", None) or "").strip().lstrip("@")
     query = getattr(args, "query", None)
     scope = getattr(args, "scope", "all")
     since = getattr(args, "since", None)

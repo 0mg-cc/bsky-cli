@@ -129,6 +129,47 @@ def test_search_history_scope_dm_filters_only_dm(monkeypatch, capsys):
     assert all(r["kind"] == "dm" for r in data["results"])
 
 
+def test_search_history_accepts_at_prefixed_handle(monkeypatch, capsys):
+    from bsky_cli import search_history_cmd
+
+    monkeypatch.setattr(
+        search_history_cmd,
+        "get_session",
+        lambda: ("https://pds.invalid", "did:me", "jwt", "echo.0mg.cc"),
+    )
+
+    seen = {"handle": None}
+
+    def _resolve(pds, h):
+        seen["handle"] = h
+        return "did:plc:target"
+
+    monkeypatch.setattr(search_history_cmd, "resolve_handle", _resolve)
+
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    monkeypatch.setattr(search_history_cmd, "open_db", lambda account_handle: conn)
+
+    search_history_cmd.ensure_schema(conn)
+
+    args = SimpleNamespace(
+        handle="@target.example",
+        query="hello",
+        scope="all",
+        since=None,
+        until=None,
+        limit=10,
+        json=True,
+    )
+
+    rc = search_history_cmd.run(args)
+    assert rc == 0
+    assert seen["handle"] == "target.example"
+
+    data = json.loads(capsys.readouterr().out)
+    assert data["handle"] == "target.example"
+
+
 def test_search_history_until_date_only_is_inclusive(monkeypatch, capsys):
     """Regression: --until YYYY-MM-DD should include that whole day."""
 
