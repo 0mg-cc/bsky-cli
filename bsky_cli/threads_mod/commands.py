@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -124,9 +125,15 @@ def cmd_list(args) -> int:
     print(f"📋 Tracked Threads ({len(threads_data)})\n")
     
     for uri, t_data in threads_data.items():
-        t = TrackedThread.from_dict(t_data)
+        try:
+            t = TrackedThread.from_dict(t_data)
+        except Exception as exc:
+            print(f"⚠️  Skipping corrupt thread entry {uri}: {exc}", file=sys.stderr)
+            continue
+
         if t is None:
             continue
+
         status = "✓" if t.enabled else "⏸"
         print(f"{status} @{t.root_author_handle} (score: {t.overall_score:.0f})")
         print(f"  {t.root_url}")
