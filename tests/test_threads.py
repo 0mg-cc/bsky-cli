@@ -39,14 +39,33 @@ class TestBranch:
             topic_drift=0.3,
             branch_score=65.0
         )
-        
+
         d = branch.to_dict()
         restored = Branch.from_dict(d)
-        
+
         assert restored.our_reply_uri == branch.our_reply_uri
         assert restored.interlocutors == branch.interlocutors
         assert restored.message_count == branch.message_count
         assert restored.branch_score == branch.branch_score
+
+    def test_from_dict_ignores_legacy_messages_key(self):
+        """Should ignore legacy state keys like `messages` instead of crashing."""
+        branch_data = {
+            "our_reply_uri": "at://did:plc:me/app.bsky.feed.post/123",
+            "our_reply_url": "https://bsky.app/profile/did:plc:me/post/123",
+            "interlocutors": ["alice.bsky.social"],
+            "interlocutor_dids": ["did:plc:alice"],
+            "last_activity_at": "2026-02-04T12:00:00Z",
+            "message_count": 2,
+            "topic_drift": 0.1,
+            "branch_score": 55.0,
+            "messages": ["legacy payload"],
+        }
+
+        restored = Branch.from_dict(branch_data)
+
+        assert restored.our_reply_uri == branch_data["our_reply_uri"]
+        assert restored.message_count == 2
 
 
 class TestTrackedThread:

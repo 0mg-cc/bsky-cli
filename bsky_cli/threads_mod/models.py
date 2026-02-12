@@ -28,7 +28,18 @@ class Branch:
 
     @classmethod
     def from_dict(cls, d: dict) -> "Branch":
-        return cls(**d)
+        allowed_fields = {
+            "our_reply_uri",
+            "our_reply_url",
+            "interlocutors",
+            "interlocutor_dids",
+            "last_activity_at",
+            "message_count",
+            "topic_drift",
+            "branch_score",
+        }
+        filtered = {k: v for k, v in d.items() if k in allowed_fields}
+        return cls(**filtered)
 
 
 @dataclass
