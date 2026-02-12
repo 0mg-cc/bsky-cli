@@ -269,6 +269,7 @@ TIME FORMATS:
     search_parser.add_argument("--sort", choices=["latest", "top"], default="latest", 
                               help="Sort order (default: latest)")
     search_parser.add_argument("--compact", "-c", action="store_true", help="Compact output (no metrics)")
+    search_parser.add_argument("--json", action="store_true", help="Output JSON")
 
     # engage
     engage_parser = subparsers.add_parser(
@@ -502,6 +503,7 @@ BADGES IN NOTIFICATIONS:
     people_parser.add_argument("--regulars", action="store_true", help="Show regulars only")
     people_parser.add_argument("--stats", action="store_true", help="Show statistics")
     people_parser.add_argument("--limit", type=int, default=20, help="Max users to show (default: 20)")
+    people_parser.add_argument("--json", action="store_true", help="Output JSON")
 
     people_parser.add_argument("--set-note", dest="set_note", help="Set a manual note for this person")
     people_parser.add_argument("--add-tag", dest="add_tag", action="append", help="Add a tag (repeatable)")

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 from types import SimpleNamespace
 
@@ -89,6 +90,7 @@ def test_people_can_set_note_and_tags_in_db(monkeypatch, capsys):
         set_note="Met at conference",
         add_tag=["ai"],
         remove_tag=None,
+        json=False,
     )
 
     rc = people.run(args)
@@ -99,3 +101,37 @@ def test_people_can_set_note_and_tags_in_db(monkeypatch, capsys):
 
     tags = [r[0] for r in conn.execute("SELECT tag FROM actor_tags WHERE did=?", ("did:plc:alice",)).fetchall()]
     assert "ai" in tags
+
+
+def test_people_list_json_outputs_machine_readable_payload(monkeypatch, capsys):
+    from bsky_cli import people
+
+    conn = _mk_conn()
+    monkeypatch.setattr(people, "_open_default_db", lambda: (conn, "echo.0mg.cc"))
+    people.ensure_schema(conn)
+
+    conn.execute("INSERT INTO actors(did, handle, display_name) VALUES (?,?,?)", ("did:plc:alice", "alice.bsky.social", "Alice"))
+    conn.execute(
+        "INSERT INTO interactions(actor_did, date, type, post_uri, our_text, their_text) VALUES (?,?,?,?,?,?)",
+        ("did:plc:alice", "2026-02-10", "reply_to_them", None, "hi", "yo"),
+    )
+    conn.commit()
+
+    args = SimpleNamespace(
+        stats=False,
+        handle=None,
+        regulars=False,
+        limit=20,
+        enrich=False,
+        execute=False,
+        set_note=None,
+        add_tag=None,
+        remove_tag=None,
+        json=True,
+    )
+
+    rc = people.run(args)
+    assert rc == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["account"] == "echo.0mg.cc"
+    assert payload["people"][0]["handle"] == "alice.bsky.social"

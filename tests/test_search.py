@@ -1,6 +1,8 @@
 """Tests for search module."""
+import json
 import pytest
 import datetime as dt
+from types import SimpleNamespace
 from unittest.mock import patch, MagicMock
 
 from bsky_cli.search import (
@@ -8,6 +10,7 @@ from bsky_cli.search import (
     parse_relative_time,
     format_post,
 )
+from bsky_cli import search as search_mod
 
 
 class TestParseRelativeTime:
@@ -193,3 +196,31 @@ class TestSearchPosts:
         
         call_params = mock_get.call_args[1]["params"]
         assert call_params["limit"] == 100
+
+
+def test_search_run_json_outputs_raw_posts(monkeypatch, capsys):
+    monkeypatch.setattr(search_mod, "get_session", lambda: ("https://pds.example", "did:plc:me", "jwt", "me.bsky.social"))
+    monkeypatch.setattr(
+        search_mod,
+        "search_posts",
+        lambda *args, **kwargs: [
+            {"uri": "at://did:plc:test/app.bsky.feed.post/1", "record": {"text": "hello"}}
+        ],
+    )
+
+    args = SimpleNamespace(
+        query="hello",
+        author=None,
+        since=None,
+        until=None,
+        limit=1,
+        sort="latest",
+        compact=False,
+        json=True,
+    )
+
+    rc = search_mod.run(args)
+    assert rc == 0
+    out = capsys.readouterr().out
+    data = json.loads(out)
+    assert data[0]["record"]["text"] == "hello"

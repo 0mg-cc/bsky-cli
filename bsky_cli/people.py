@@ -327,6 +327,17 @@ def run(args) -> int:
         regular_threshold = get_regular_threshold()
         regulars = sum(1 for t in totals if t >= regular_threshold)
 
+        if getattr(args, "json", False):
+            print(json.dumps({
+                "account": account_handle,
+                "total_users": total_users,
+                "regular_threshold": regular_threshold,
+                "regulars": regulars,
+                "total_interactions": total_interactions,
+                "average_per_user": (total_interactions / total_users) if total_users else 0,
+            }, ensure_ascii=False, indent=2))
+            return 0
+
         print("📊 Interlocutor Statistics\n")
         print(f"Total users tracked: {total_users}")
         print(f"Regulars ({regular_threshold}+ interactions): {regulars}")
@@ -368,6 +379,26 @@ def run(args) -> int:
         regular = st["total"] >= get_regular_threshold()
         friendly = st["total"] >= get_friendly_threshold()
         badge = "🔄 Regular" if regular else ("🙂 Friendly" if friendly else "👤 Known")
+
+        if getattr(args, "json", False):
+            print(json.dumps({
+                "account": account_handle,
+                "person": {
+                    "did": row["did"],
+                    "handle": row["handle"],
+                    "display_name": row["display_name"],
+                    "first_seen": row["first_seen"],
+                    "tags": tags,
+                    "regular": regular,
+                    "friendly": friendly,
+                    "stats": st,
+                    "notes_manual": row["notes_manual"],
+                    "notes_auto": row["notes_auto"],
+                    "interests_auto": row["interests_auto"],
+                    "relationship_tone": row["relationship_tone"],
+                }
+            }, ensure_ascii=False, indent=2))
+            return 0
 
         print(f"{badge}: @{row['handle']}")
         if row["display_name"]:
@@ -503,10 +534,22 @@ def run(args) -> int:
         title = "👥 All Known Interlocutors"
 
     if not people:
+        if getattr(args, "json", False):
+            print(json.dumps({"account": account_handle, "people": []}, ensure_ascii=False, indent=2))
+            return 0
         print("No interlocutors tracked yet.")
         return 0
 
     people = people[:limit]
+
+    if getattr(args, "json", False):
+        print(json.dumps({
+            "account": account_handle,
+            "regulars_only": bool(getattr(args, "regulars", False)),
+            "limit": limit,
+            "people": people,
+        }, ensure_ascii=False, indent=2))
+        return 0
 
     print(f"{title} ({len(people)} shown)\n")
     for p in people:
@@ -524,6 +567,7 @@ def main():
     parser.add_argument("--regulars", action="store_true", help="Show regulars only")
     parser.add_argument("--stats", action="store_true", help="Show statistics")
     parser.add_argument("--limit", type=int, default=20, help="Max users to show")
+    parser.add_argument("--json", action="store_true", help="Output JSON")
     parser.add_argument("--set-note", dest="set_note", help="Set a manual note for this person")
     parser.add_argument("--add-tag", dest="add_tag", action="append", help="Add a tag (repeatable)")
     parser.add_argument("--remove-tag", dest="remove_tag", action="append", help="Remove a tag (repeatable)")

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import json
 
 from .http import requests
 
@@ -155,37 +156,40 @@ def format_post(post: dict, show_metrics: bool = True) -> str:
 
 def run(args) -> int:
     """Entry point from CLI."""
-    print("🔗 Connecting to BlueSky...")
     pds, did, jwt, handle = get_session()
-    print(f"✓ Logged in as @{handle}")
-    
-    query = args.query
-    print(f"\n🔍 Searching for: {query}")
-    
-    if args.author:
-        print(f"   Author filter: {args.author}")
-    if args.since:
-        print(f"   Since: {args.since}")
-    
+
     posts = search_posts(
-        pds, jwt, query,
+        pds, jwt, args.query,
         limit=args.limit,
         author=args.author,
         since=args.since,
         until=args.until,
         sort=args.sort
     )
-    
+
+    if getattr(args, "json", False):
+        print(json.dumps(posts, ensure_ascii=False, indent=2))
+        return 0
+
+    print("🔗 Connecting to BlueSky...")
+    print(f"✓ Logged in as @{handle}")
+    print(f"\n🔍 Searching for: {args.query}")
+
+    if args.author:
+        print(f"   Author filter: {args.author}")
+    if args.since:
+        print(f"   Since: {args.since}")
+
     if not posts:
         print("\nNo posts found.")
         return 0
-    
+
     print(f"\n📋 Found {len(posts)} posts:\n")
-    
+
     for post in posts:
         print(format_post(post, show_metrics=not args.compact))
         print()
-    
+
     return 0
 
 
@@ -213,6 +217,7 @@ TIME FORMATS:
     parser.add_argument("--sort", choices=["latest", "top"], default="latest", 
                        help="Sort order (default: latest)")
     parser.add_argument("--compact", "-c", action="store_true", help="Compact output (no metrics)")
+    parser.add_argument("--json", action="store_true", help="Output JSON")
     args = parser.parse_args()
     return run(args)
 
