@@ -8,6 +8,7 @@ from html.parser import HTMLParser
 from .http import requests
 
 from .auth import get_session, utc_now_iso, upload_blob
+from .followup_notifications import schedule_notification_followups
 
 
 class OGParser(HTMLParser):
@@ -467,4 +468,6 @@ def run(args) -> int:
         print(f"https://bsky.app/profile/{m.group(1)}/post/{m.group(2)}")
     else:
         print(res)
+
+    schedule_notification_followups()
     return 0

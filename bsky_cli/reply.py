@@ -7,6 +7,7 @@ from .http import requests
 
 from .auth import get_session, utc_now_iso, resolve_handle
 from .post import detect_facets
+from .followup_notifications import schedule_notification_followups
 
 
 def parse_post_url(url: str) -> tuple[str, str] | None:
@@ -38,7 +39,7 @@ def create_reply(pds: str, jwt: str, repo_did: str, text: str,
     url = pds.rstrip("/") + "/xrpc/com.atproto.repo.createRecord"
     headers = {"Authorization": f"Bearer {jwt}"}
     
-    facets = detect_facets(text)
+    facets = detect_facets(text, pds=pds)
     
     record = {
         "$type": "app.bsky.feed.post",
@@ -111,4 +112,6 @@ def run(args) -> int:
         print(f"✅ Reply posted: https://bsky.app/profile/{m.group(1)}/post/{m.group(2)}")
     else:
         print(res)
+
+    schedule_notification_followups()
     return 0
