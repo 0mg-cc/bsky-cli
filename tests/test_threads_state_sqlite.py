@@ -114,3 +114,15 @@ def test_migrate_threads_state_from_json(monkeypatch, tmp_path: Path):
     assert not legacy_path.exists()
     archived = list(tmp_path.glob("legacy.json.bak.*"))
     assert archived, "expected legacy json to be archived"
+
+
+def test_tracked_thread_from_dict_missing_root_uri():
+    """TrackedThread.from_dict should return None for legacy entries missing required keys."""
+    from bsky_cli.threads_mod.models import TrackedThread
+    legacy_entry = {
+        "root_url": "https://example.com",
+        "branches": {},
+        # Missing: root_uri, root_author_handle, etc.
+    }
+    result = TrackedThread.from_dict(legacy_entry)
+    assert result is None

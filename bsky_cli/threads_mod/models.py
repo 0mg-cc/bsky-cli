@@ -76,6 +76,17 @@ class TrackedThread:
 
     @classmethod
     def from_dict(cls, d: dict) -> "TrackedThread":
+        # Validate required fields for legacy state compatibility
+        required = ("root_uri", "root_url", "root_author_handle",
+                     "root_author_did", "main_topics", "overall_score",
+                     "created_at", "last_activity_at")
+        missing = [k for k in required if k not in d]
+        if missing:
+            import sys
+            print(f"⚠️  Skipping legacy thread entry (missing: {', '.join(missing)})",
+                  file=sys.stderr)
+            return None  # type: ignore[return-value]
+
         branches = {k: Branch.from_dict(v) for k, v in d.get("branches", {}).items()}
         return cls(
             root_uri=d["root_uri"],

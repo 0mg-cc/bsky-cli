@@ -125,6 +125,8 @@ def cmd_list(args) -> int:
     
     for uri, t_data in threads_data.items():
         t = TrackedThread.from_dict(t_data)
+        if t is None:
+            continue
         status = "✓" if t.enabled else "⏸"
         print(f"{status} @{t.root_author_handle} (score: {t.overall_score:.0f})")
         print(f"  {t.root_url}")
@@ -457,6 +459,9 @@ def cmd_backoff_check(args) -> int:
         return 2
     
     thread = TrackedThread.from_dict(threads[found_uri])
+    if thread is None:
+        print(f"❌ Thread entry is corrupted or legacy: {found_uri}")
+        return 2
     now = datetime.now(timezone.utc)
     
     # Get current backoff interval
