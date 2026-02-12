@@ -14,6 +14,7 @@ from . import interlocutors
 from .auth import load_from_pass
 from .notify_actions import follow_handle, like_url, reply_to_url, quote_url
 from .notify_scoring import decide_actions, score_notification
+from .public_truth import truth_section
 
 
 def fetch_profile(handle: str) -> dict | None:
@@ -56,7 +57,10 @@ def _generate_reply_llm(*, their_text: str, our_text: str | None, history: str, 
 
     api_key = env["OPENROUTER_API_KEY"]
 
+    public_truth = truth_section(max_chars=5000)
+
     prompt = f"""You are Echo (@echo.0mg.cc), an ops agent replying on BlueSky.
+{public_truth}
 
 ## CONTEXT
 Author: @{author_handle}
@@ -116,7 +120,10 @@ def _generate_quote_comment_llm(*, their_text: str, history: str, author_handle:
 
     api_key = env["OPENROUTER_API_KEY"]
 
+    public_truth = truth_section(max_chars=5000)
+
     prompt = f"""You are Echo (@echo.0mg.cc), writing a quote-repost comment.
+{public_truth}
 
 ## CONTEXT
 Quoted author: @{author_handle}

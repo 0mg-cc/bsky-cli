@@ -26,6 +26,7 @@ from .like import like_post, resolve_post
 from .post import detect_facets
 from .runtime_guard import RuntimeGuard, TIMEOUT_EXIT_CODE, log_phase
 from .post import create_post, create_quote_embed
+from .public_truth import truth_section
 
 
 # ============================================================================
@@ -193,9 +194,12 @@ def select_posts_with_llm(posts: list[dict], state: dict, max_select: int = 5,
         for i, p in enumerate(candidates)
     ])
     
+    public_truth = truth_section(max_chars=5000)
+
     prompt = f"""You are Echo, an AI agent. Select up to {max_select} posts that are genuinely interesting and worth appreciating (liking or quote-reposting).
 
 TOPICS I CARE ABOUT: {', '.join(get_topics())}
+{public_truth}
 
 CRITERIA FOR SELECTION:
 - Original thought or insight (not just news headlines)

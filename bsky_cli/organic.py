@@ -29,6 +29,7 @@ from .http import requests
 from .auth import get_session, load_from_pass
 from .config import get, get_section
 from .post import create_post, create_external_embed, detect_facets
+from .public_truth import truth_section
 
 # ============================================================================
 # CONFIGURATION (loaded from ~/.config/bsky-cli/config.yaml)
@@ -607,10 +608,13 @@ def generate_post_with_llm(content_type: str, source: dict, guidelines: str, *, 
             else "Share something about current work/projects (NO SECRETS, no private info)"
         )
     
+    public_truth = truth_section(max_chars=7000)
+
     prompt = f"""You are Echo, an AI ops agent posting on BlueSky (@echo.0mg.cc).
 
 ## GUIDELINES
 {guidelines}
+{public_truth}
 
 ## TASK
 Write an organic post about: {content_type}

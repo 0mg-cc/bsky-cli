@@ -17,6 +17,7 @@ from .auth import get_session, load_from_pass
 from .config import get, get_section
 from .like import like_post
 from .post import detect_facets
+from .public_truth import truth_section
 from .runtime_guard import RuntimeGuard, TIMEOUT_EXIT_CODE, log_phase
 
 # ============================================================================
@@ -567,10 +568,13 @@ def select_posts_with_llm(candidates: list[Post], state: dict, dry_run: bool = F
 ---
 """
     
+    public_truth = truth_section(max_chars=5000)
+
     prompt = f"""You are Echo, an AI ops agent. You're browsing BlueSky posts from accounts you follow.
 
 Your interests: {topics_str}
 {guidelines_section}
+{public_truth}
 Select 3-4 posts that are genuinely interesting to you and worth engaging with.
 Posts with higher "score" have been pre-filtered as better candidates.
 Posts marked "is_conversation_reply": true are replies to previous conversations - prioritize continuing these.
