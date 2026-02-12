@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+from datetime import datetime, timedelta, timezone
 from html.parser import HTMLParser
 
 from .http import requests
@@ -250,27 +251,75 @@ def create_quote_embed(uri: str, cid: str) -> dict:
     }
 
 
-def _fetch_recent_own_posts(pds: str, jwt: str, did: str, limit: int = 10) -> list[str]:
-    """Fetch recent posts by this DID (best-effort). Returns list of post texts."""
+def _parse_created_at_utc(value: str | None) -> datetime | None:
+    if not value:
+        return None
     try:
-        r = requests.get(
-            f"{pds}/xrpc/app.bsky.feed.getAuthorFeed",
-            headers={"Authorization": f"Bearer {jwt}"},
-            params={"actor": did, "limit": int(limit)},
-            timeout=20,
-        )
-        r.raise_for_status()
-        feed = r.json().get("feed", [])
-        out = []
-        for item in feed:
-            post = (item.get("post") or {})
-            record = (post.get("record") or {})
-            txt = (record.get("text") or "").strip()
-            if txt:
-                out.append(txt)
+        return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(timezone.utc)
+    except Exception:
+        return None
+
+
+def _fetch_recent_own_posts(
+    pds: str,
+    jwt: str,
+    did: str,
+    limit: int = 150,
+    lookback_days: int = 7,
+) -> list[str]:
+    """Fetch recent posts within lookback window (best-effort).
+
+    Scans author feed pages until either:
+    - `limit` post texts are collected, or
+    - posts are older than `lookback_days`.
+    """
+    out: list[str] = []
+    cursor: str | None = None
+    cutoff = datetime.now(timezone.utc) - timedelta(days=max(1, int(lookback_days)))
+
+    try:
+        while len(out) < int(limit):
+            req_limit = min(100, int(limit) - len(out))
+            params = {"actor": did, "limit": req_limit}
+            if cursor:
+                params["cursor"] = cursor
+
+            r = requests.get(
+                f"{pds}/xrpc/app.bsky.feed.getAuthorFeed",
+                headers={"Authorization": f"Bearer {jwt}"},
+                params=params,
+                timeout=20,
+            )
+            r.raise_for_status()
+            data = r.json()
+            feed = data.get("feed", [])
+            if not feed:
+                break
+
+            stop_for_age = False
+            for item in feed:
+                post = (item.get("post") or {})
+                record = (post.get("record") or {})
+                created = _parse_created_at_utc(record.get("createdAt"))
+                if created and created < cutoff:
+                    stop_for_age = True
+                    break
+                txt = (record.get("text") or "").strip()
+                if txt:
+                    out.append(txt)
+                    if len(out) >= int(limit):
+                        break
+
+            if stop_for_age or len(out) >= int(limit):
+                break
+
+            cursor = data.get("cursor")
+            if not cursor:
+                break
+
         return out
     except Exception:
-        return []
+        return out
 
 
 _STOPWORDS = {
@@ -315,7 +364,8 @@ def create_post(
     embed=None,
     *,
     allow_repeat: bool = False,
-    recent_limit: int = 10,
+    recent_limit: int = 150,
+    recent_lookback_days: int = 7,
     reply_root: dict | None = None,
     reply_parent: dict | None = None,
 ) -> dict:
@@ -324,13 +374,20 @@ def create_post(
     Preflight: best-effort fetch of last N posts to avoid re-posting on the same topic.
     """
     if not allow_repeat:
-        recent = _fetch_recent_own_posts(pds, jwt, did, limit=recent_limit)
+        recent = _fetch_recent_own_posts(
+            pds,
+            jwt,
+            did,
+            limit=recent_limit,
+            lookback_days=recent_lookback_days,
+        )
         for rt in recent:
             if _is_probably_same_topic(text, rt):
                 snippet = rt.replace("\n", " ")[:140]
                 raise SystemExit(
-                    "Refusing to post: looks too similar to one of the last "
-                    f"{recent_limit} posts. Similar to: '{snippet}…'\n"
+                    "Refusing to post: looks too similar to recent posts "
+                    f"(last {recent_lookback_days} days, up to {recent_limit} posts). "
+                    f"Similar to: '{snippet}…'\n"
                     "Use --allow-repeat to override."
                 )
 

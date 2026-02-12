@@ -7,6 +7,7 @@ from bsky_cli.post import (
     detect_facets,
     resolve_post,
     create_quote_embed,
+    _fetch_recent_own_posts,
 )
 
 
@@ -186,3 +187,29 @@ def test_post_run_passes_pds_to_detect_facets_for_mentions(monkeypatch):
     rc = post_mod.run(args)
     assert rc == 0
     assert seen["pds"] == "https://pds.example"
+
+
+def test_fetch_recent_own_posts_respects_lookback_window(monkeypatch):
+    """Should ignore posts older than lookback window (time barrier)."""
+
+    class DummyResponse:
+        def __init__(self, payload):
+            self._payload = payload
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return self._payload
+
+    payload = {
+        "feed": [
+            {"post": {"record": {"text": "new enough", "createdAt": "2099-01-01T00:00:00Z"}}},
+            {"post": {"record": {"text": "too old", "createdAt": "2020-01-01T00:00:00Z"}}},
+        ]
+    }
+
+    monkeypatch.setattr(post_mod.requests, "get", lambda *a, **k: DummyResponse(payload))
+
+    out = _fetch_recent_own_posts("https://pds.example", "jwt", "did:plc:me", limit=150, lookback_days=7)
+    assert out == ["new enough"]
