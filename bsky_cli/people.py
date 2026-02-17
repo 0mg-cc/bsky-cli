@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 
 from pathlib import Path
 
-from .auth import load_from_pass, resolve_handle
+from .auth import load_from_pass, resolve_handle, get_openrouter_pass_path
 from .http import requests
 from .interlocutors import get_friendly_threshold, get_regular_threshold
 from .storage.db import ensure_schema, import_interlocutors_json, open_db
@@ -198,11 +198,12 @@ def _parse_iso_z(s: str) -> datetime:
 
 
 def _get_openrouter() -> tuple[str, str]:
-    env = load_from_pass("api/openrouter") or {}
+    pass_path = get_openrouter_pass_path()
+    env = load_from_pass(pass_path) or {}
     api_key = env.get("OPENROUTER_API_KEY")
     model = env.get("OPENROUTER_MODEL") or "google/gemini-2.0-flash-001"
     if not api_key:
-        raise RuntimeError("Missing OPENROUTER_API_KEY in pass api/openrouter")
+        raise RuntimeError(f"Missing OPENROUTER_API_KEY in pass {pass_path}")
     return api_key, model
 
 

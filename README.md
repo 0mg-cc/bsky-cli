@@ -40,7 +40,7 @@ BSKY_APP_PASSWORD=xxxx-xxxx-xxxx-xxxx
 
 Get an app password from: [Settings → App Passwords](https://bsky.app/settings/app-passwords)
 
-For LLM features (`engage`, `appreciate`, `organic`, `people --enrich`), also create a pass entry at `api/openrouter`:
+For LLM features (`engage`, `appreciate`, `organic`, `people --enrich`), create a dedicated pass entry at `api/openrouter-bsky`:
 
 ```
 OPENROUTER_API_KEY=sk-or-...

@@ -6,6 +6,7 @@ import datetime as dt
 import json
 import random
 import subprocess
+import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -13,7 +14,7 @@ from typing import Callable
 
 from .http import requests
 
-from .auth import get_session, load_from_pass
+from .auth import get_session, load_from_pass, get_openrouter_pass_path
 from .config import get, get_section
 from .like import like_post
 from .post import detect_facets
@@ -41,6 +42,36 @@ def get_engage_config() -> dict:
 STATE_FILE = Path.home() / "personas/echo/data/bsky-engage-state.json"
 CONVERSATIONS_FILE = Path.home() / "personas/echo/data/bsky-conversations.json"
 GUIDELINES_FILE = Path.home() / "personas/echo/data/bsky-guidelines.md"
+
+
+class RunProfiler:
+    """Lightweight JSONL profiler for engage runs."""
+
+    def __init__(self, enabled: bool, output_path: str | None = None):
+        self.enabled = bool(enabled)
+        self.events: list[dict] = []
+        self.started_at = dt.datetime.now(dt.timezone.utc)
+        self.output_path = Path(output_path) if output_path else (
+            Path.home() / "personas/echo/data" /
+            f"bsky-engage-profile-{self.started_at.strftime('%Y-%m-%dT%H%M%SZ')}.jsonl"
+        )
+
+    def log(self, event: str, **fields) -> None:
+        if not self.enabled:
+            return
+        self.events.append({
+            "ts": dt.datetime.now(dt.timezone.utc).isoformat(),
+            "event": event,
+            **fields,
+        })
+
+    def flush(self) -> None:
+        if not self.enabled:
+            return
+        self.output_path.parent.mkdir(parents=True, exist_ok=True)
+        with self.output_path.open("a", encoding="utf-8") as f:
+            for row in self.events:
+                f.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
 # ============================================================================
@@ -396,9 +427,10 @@ def get_replies_to_our_posts(pds: str, jwt: str, our_did: str, conversations: di
 
 def get_openrouter_key() -> str:
     """Get OpenRouter API key from pass."""
-    env = load_from_pass("api/openrouter")
+    pass_path = get_openrouter_pass_path()
+    env = load_from_pass(pass_path)
     if not env or "OPENROUTER_API_KEY" not in env:
-        raise SystemExit("Missing OPENROUTER_API_KEY in pass api/openrouter")
+        raise SystemExit(f"Missing OPENROUTER_API_KEY in pass {pass_path}")
     return env["OPENROUTER_API_KEY"]
 
 
@@ -720,145 +752,179 @@ def create_default_pipeline(our_did: str) -> FilterPipeline:
 
 def run(args) -> int:
     """Entry point from CLI."""
-    print("🔗 Connecting to BlueSky...")
-    pds, did, jwt, handle = get_session()
-    print(f"✓ Logged in as @{handle}")
+    profiler = RunProfiler(
+        enabled=getattr(args, "profile", False),
+        output_path=getattr(args, "profile_output", None),
+    )
+    run_t0 = time.perf_counter()
 
-    state = load_state()
-    conversations = load_conversations()
-    hours = getattr(args, 'hours', 12)
-    dry_run = getattr(args, 'dry_run', False)
-    guard = RuntimeGuard(getattr(args, 'max_runtime_seconds', None))
+    try:
+        print("🔗 Connecting to BlueSky...")
+        pds, did, jwt, handle = get_session()
+        print(f"✓ Logged in as @{handle}")
+        profiler.log("session", handle=handle, pds=pds)
 
-    # Create filter pipeline
-    pipeline = create_default_pipeline(did)
+        state = load_state()
+        conversations = load_conversations()
+        hours = getattr(args, 'hours', 12)
+        dry_run = getattr(args, 'dry_run', False)
+        guard = RuntimeGuard(getattr(args, 'max_runtime_seconds', None))
 
-    # Collect posts from follows
-    log_phase("collect")
-    if guard.check("collect"):
-        return TIMEOUT_EXIT_CODE
-    print("📋 Fetching follows...")
-    follows = get_follows(pds, jwt, did, guard=guard)
-    if guard.check("collect"):
-        print(f"✓ Following {len(follows)} accounts (partial — timed out)")
-        return TIMEOUT_EXIT_CODE
-    print(f"✓ Following {len(follows)} accounts")
-    
-    print(f"📰 Fetching recent posts (last {hours}h)...")
-    all_posts: list[Post] = []
-    for i, follow in enumerate(follows):
+        # Create filter pipeline
+        pipeline = create_default_pipeline(did)
+
+        # Collect posts from follows
+        log_phase("collect")
         if guard.check("collect"):
+            profiler.log("run_summary", status="timeout", phase="collect")
             return TIMEOUT_EXIT_CODE
-        if i % 50 == 0 and i > 0:
-            print(f"  ...checked {i}/{len(follows)} accounts")
-        feed = get_author_feed(pds, jwt, follow["did"])
-        recent = filter_recent_posts(feed, hours=hours)
-        all_posts.extend(recent)
-    
-    print(f"✓ Found {len(all_posts)} posts in the last {hours}h")
-    
-    # Check for replies to our posts (conversation continuation)
-    print("💬 Checking for conversation replies...")
-    conversation_replies = get_replies_to_our_posts(pds, jwt, did, conversations)
-    if conversation_replies:
-        print(f"✓ Found {len(conversation_replies)} replies to continue")
-        all_posts.extend(conversation_replies)
-    
-    if not all_posts:
-        print("No posts to engage with.")
-        return 0
-    
-    # Apply filter pipeline
-    log_phase("score")
-    if guard.check("score"):
-        return TIMEOUT_EXIT_CODE
-    print("🔍 Filtering candidates...")
-    candidates = pipeline.process(all_posts, state)
-    print(f"✓ {len(candidates)} posts passed filters")
-    
-    if not candidates:
-        print("No posts passed filters.")
-        return 0
-    
-    # LLM selection
-    log_phase("decide")
-    if guard.check("decide"):
-        return TIMEOUT_EXIT_CODE
-    print("🤖 Selecting interesting posts...")
-    selections = select_posts_with_llm(candidates, state, dry_run=dry_run)
-    
-    if not selections:
-        print("No posts selected for engagement.")
-        return 0
-    
-    print(f"\n{'[DRY RUN] ' if dry_run else ''}Selected {len(selections)} posts:\n")
+        print("📋 Fetching follows...")
+        t0 = time.perf_counter()
+        follows = get_follows(pds, jwt, did, guard=guard)
+        profiler.log("collect_follows", duration_ms=round((time.perf_counter() - t0) * 1000, 2), follows=len(follows))
+        if guard.check("collect"):
+            print(f"✓ Following {len(follows)} accounts (partial — timed out)")
+            profiler.log("run_summary", status="timeout", phase="collect", follows=len(follows))
+            return TIMEOUT_EXIT_CODE
+        print(f"✓ Following {len(follows)} accounts")
 
-    log_phase("act")
-    if guard.check("act"):
-        if not dry_run:
-            save_state(state)
-            save_conversations(conversations)
-            print("⏱️ Timeout — partial state saved.")
-        return TIMEOUT_EXIT_CODE
+        print(f"📰 Fetching recent posts (last {hours}h)...")
+        all_posts: list[Post] = []
+        for i, follow in enumerate(follows):
+            if guard.check("collect"):
+                profiler.log("run_summary", status="timeout", phase="collect", follows_scanned=i, posts=len(all_posts))
+                return TIMEOUT_EXIT_CODE
+            if i % 50 == 0 and i > 0:
+                print(f"  ...checked {i}/{len(follows)} accounts")
+            feed_t0 = time.perf_counter()
+            feed = get_author_feed(pds, jwt, follow["did"])
+            recent = filter_recent_posts(feed, hours=hours)
+            all_posts.extend(recent)
+            profiler.log("collect_author_feed", index=i, did=follow.get("did"), handle=follow.get("handle"), duration_ms=round((time.perf_counter()-feed_t0)*1000,2), feed_items=len(feed), recent_items=len(recent))
 
-    for sel in selections:
+        print(f"✓ Found {len(all_posts)} posts in the last {hours}h")
+
+        # Check for replies to our posts (conversation continuation)
+        print("💬 Checking for conversation replies...")
+        replies_t0 = time.perf_counter()
+        conversation_replies = get_replies_to_our_posts(pds, jwt, did, conversations)
+        profiler.log("collect_conversation_replies", duration_ms=round((time.perf_counter()-replies_t0)*1000,2), replies=len(conversation_replies))
+        if conversation_replies:
+            print(f"✓ Found {len(conversation_replies)} replies to continue")
+            all_posts.extend(conversation_replies)
+
+        if not all_posts:
+            print("No posts to engage with.")
+            profiler.log("run_summary", status="ok", reason="no_posts")
+            return 0
+
+        # Apply filter pipeline
+        log_phase("score")
+        if guard.check("score"):
+            profiler.log("run_summary", status="timeout", phase="score", posts=len(all_posts))
+            return TIMEOUT_EXIT_CODE
+        print("🔍 Filtering candidates...")
+        score_t0 = time.perf_counter()
+        candidates = pipeline.process(all_posts, state)
+        profiler.log("score_summary", duration_ms=round((time.perf_counter()-score_t0)*1000,2), total_posts=len(all_posts), candidates=len(candidates))
+        print(f"✓ {len(candidates)} posts passed filters")
+
+        if not candidates:
+            print("No posts passed filters.")
+            profiler.log("run_summary", status="ok", reason="no_candidates", posts=len(all_posts))
+            return 0
+
+        # LLM selection
+        log_phase("decide")
+        if guard.check("decide"):
+            profiler.log("run_summary", status="timeout", phase="decide", candidates=len(candidates))
+            return TIMEOUT_EXIT_CODE
+        print("🤖 Selecting interesting posts...")
+        decide_t0 = time.perf_counter()
+        selections = select_posts_with_llm(candidates, state, dry_run=dry_run)
+        profiler.log("decide_summary", duration_ms=round((time.perf_counter()-decide_t0)*1000,2), selected=len(selections), candidates=len(candidates))
+
+        if not selections:
+            print("No posts selected for engagement.")
+            profiler.log("run_summary", status="ok", reason="no_selection", candidates=len(candidates))
+            return 0
+
+        print(f"\n{'[DRY RUN] ' if dry_run else ''}Selected {len(selections)} posts:\n")
+
+        log_phase("act")
         if guard.check("act"):
             if not dry_run:
                 save_state(state)
                 save_conversations(conversations)
                 print("⏱️ Timeout — partial state saved.")
+            profiler.log("run_summary", status="timeout", phase="act", selected=len(selections))
             return TIMEOUT_EXIT_CODE
-        print(f"@{sel['author_handle']}:")
-        print(f"  Reason: {sel.get('reason', 'N/A')}")
-        print(f"  Reply: {sel['reply']}")
-        print()
-        
-        if not dry_run:
-            # Look up original Post to get root info for proper threading
-            original_post = next((p for p in candidates if p.uri == sel["uri"]), None)
-            root_uri = original_post.root_uri if original_post else None
-            root_cid = original_post.root_cid if original_post else None
-            
-            result = post_reply(
-                pds, jwt, did, 
-                sel["uri"], sel["cid"], sel["reply"],
-                root_uri=root_uri, root_cid=root_cid
-            )
-            if result:
-                print(f"  ✓ Posted!")
-                state["replied_posts"].append(sel["uri"])
-                author_did = sel.get("author_did") or (original_post.author_did if original_post else "")
-                state.setdefault("replied_accounts_today", []).append(author_did)
-                # Track for conversation continuation
-                track_reply(conversations, result.get("uri", ""), sel["uri"], root_uri)
-                
-                # Record interaction for interlocutor tracking
-                from . import interlocutors
-                their_text = original_post.text if original_post else ""
-                interlocutors.record_interaction(
-                    did=author_did,
-                    handle=sel["author_handle"],
-                    interaction_type="reply_to_them",
-                    post_uri=result.get("uri", ""),
-                    our_text=sel["reply"],
-                    their_text=their_text,
+
+        acted = 0
+        for sel in selections:
+            if guard.check("act"):
+                if not dry_run:
+                    save_state(state)
+                    save_conversations(conversations)
+                    print("⏱️ Timeout — partial state saved.")
+                profiler.log("run_summary", status="timeout", phase="act", acted=acted)
+                return TIMEOUT_EXIT_CODE
+            print(f"@{sel['author_handle']}:")
+            print(f"  Reason: {sel.get('reason', 'N/A')}")
+            print(f"  Reply: {sel['reply']}")
+            print()
+
+            if not dry_run:
+                # Look up original Post to get root info for proper threading
+                original_post = next((p for p in candidates if p.uri == sel["uri"]), None)
+                root_uri = original_post.root_uri if original_post else None
+                root_cid = original_post.root_cid if original_post else None
+
+                result = post_reply(
+                    pds, jwt, did,
+                    sel["uri"], sel["cid"], sel["reply"],
+                    root_uri=root_uri, root_cid=root_cid
                 )
-                
-                # Maybe like the post we replied to
-                like_prob = get_engage_config().get("like_after_reply_prob", 0.4)
-                if random.random() < like_prob:
-                    like_result = like_post(pds, jwt, did, sel["uri"], sel["cid"])
-                    if like_result:
-                        print(f"  ❤️ Also liked!")
-            else:
-                print(f"  ✗ Failed to post")
-    
-    if not dry_run:
-        save_state(state)
-        save_conversations(conversations)
-        print(f"\n✓ Engagement complete. State saved.")
-    
-    return 0
+                if result:
+                    print(f"  ✓ Posted!")
+                    state["replied_posts"].append(sel["uri"])
+                    author_did = sel.get("author_did") or (original_post.author_did if original_post else "")
+                    state.setdefault("replied_accounts_today", []).append(author_did)
+                    # Track for conversation continuation
+                    track_reply(conversations, result.get("uri", ""), sel["uri"], root_uri)
+
+                    # Record interaction for interlocutor tracking
+                    from . import interlocutors
+                    their_text = original_post.text if original_post else ""
+                    interlocutors.record_interaction(
+                        did=author_did,
+                        handle=sel["author_handle"],
+                        interaction_type="reply_to_them",
+                        post_uri=result.get("uri", ""),
+                        our_text=sel["reply"],
+                        their_text=their_text,
+                    )
+
+                    # Maybe like the post we replied to
+                    like_prob = get_engage_config().get("like_after_reply_prob", 0.4)
+                    if random.random() < like_prob:
+                        like_result = like_post(pds, jwt, did, sel["uri"], sel["cid"])
+                        if like_result:
+                            print(f"  ❤️ Also liked!")
+                else:
+                    print(f"  ✗ Failed to post")
+            acted += 1
+
+        if not dry_run:
+            save_state(state)
+            save_conversations(conversations)
+            print(f"\n✓ Engagement complete. State saved.")
+
+        profiler.log("run_summary", status="ok", selected=len(selections), acted=acted)
+        return 0
+    finally:
+        profiler.log("run_duration", duration_ms=round((time.perf_counter() - run_t0) * 1000, 2))
+        profiler.flush()
 
 
 def main():
@@ -887,6 +953,8 @@ ARCHITECTURE:
     parser.add_argument("--dry-run", action="store_true", help="Preview without posting")
     parser.add_argument("--hours", type=int, default=12, help="Look back N hours (default: 12)")
     parser.add_argument("--max-runtime-seconds", type=int, default=None, help="Abort after N seconds wall-clock")
+    parser.add_argument("--profile", action="store_true", help="Write per-step timing diagnostics to JSONL")
+    parser.add_argument("--profile-output", default=None, help="Path to JSONL diagnostics file")
     args = parser.parse_args()
     return run(args)
 

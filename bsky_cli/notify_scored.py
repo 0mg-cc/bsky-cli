@@ -13,7 +13,7 @@ from pathlib import Path
 from .http import requests
 
 from . import interlocutors
-from .auth import load_from_pass
+from .auth import load_from_pass, get_openrouter_pass_path
 from .notify_actions import follow_handle, like_url, reply_to_url, quote_url
 from .notify_scoring import decide_actions, score_notification
 from .public_truth import truth_section
@@ -99,7 +99,8 @@ def _load_relationship_tones() -> dict[str, str]:
 
 
 def _generate_reply_llm(*, their_text: str, our_text: str | None, history: str, author_handle: str) -> str | None:
-    env = load_from_pass("api/openrouter")
+    pass_path = get_openrouter_pass_path()
+    env = load_from_pass(pass_path)
     if not env or "OPENROUTER_API_KEY" not in env:
         return None
 
@@ -162,7 +163,8 @@ Return ONLY JSON:
 
 def _generate_quote_comment_llm(*, their_text: str, history: str, author_handle: str) -> str | None:
     """Generate short quote-repost commentary (<= 280)."""
-    env = load_from_pass("api/openrouter")
+    pass_path = get_openrouter_pass_path()
+    env = load_from_pass(pass_path)
     if not env or "OPENROUTER_API_KEY" not in env:
         return None
 

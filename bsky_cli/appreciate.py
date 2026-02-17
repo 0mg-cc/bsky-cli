@@ -21,7 +21,7 @@ from pathlib import Path
 
 from .http import requests
 
-from .auth import get_session, load_from_pass
+from .auth import get_session, load_from_pass, get_openrouter_pass_path
 from .config import get, get_section
 from .like import like_post, resolve_post
 from .post import detect_facets
@@ -254,11 +254,12 @@ Respond in JSON format:
 If nothing is worth selecting, return {{"selections": []}}"""
 
     try:
-        env = load_from_pass("api/openrouter") or {}
+        pass_path = get_openrouter_pass_path()
+        env = load_from_pass(pass_path) or {}
         api_key = env.get("OPENROUTER_API_KEY")
         model = env.get("OPENROUTER_MODEL") or "google/gemini-2.0-flash-001"
         if not api_key:
-            raise RuntimeError("Missing OPENROUTER_API_KEY in pass api/openrouter")
+            raise RuntimeError(f"Missing OPENROUTER_API_KEY in pass {pass_path}")
         
         r = requests.post(
             "https://openrouter.ai/api/v1/chat/completions",

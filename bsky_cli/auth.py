@@ -2,11 +2,23 @@
 from __future__ import annotations
 
 import datetime as dt
+import os
 import subprocess
 
 from .http import requests
 
 PASS_PATH = "api/bsky-echo"
+OPENROUTER_PASS_PATH = "api/openrouter-bsky"
+
+
+def get_openrouter_pass_path() -> str:
+    """Return pass path for OpenRouter key used by BlueSky features."""
+    return os.environ.get("BSKY_OPENROUTER_PASS_PATH", OPENROUTER_PASS_PATH)
+
+
+def load_openrouter_from_pass() -> dict | None:
+    """Load BlueSky OpenRouter credentials from pass."""
+    return load_from_pass(get_openrouter_pass_path())
 
 
 def load_from_pass(pass_path: str = PASS_PATH) -> dict | None:

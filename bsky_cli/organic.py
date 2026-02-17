@@ -26,7 +26,7 @@ import yaml
 
 from .http import requests
 
-from .auth import get_session, load_from_pass
+from .auth import get_session, load_from_pass, get_openrouter_pass_path
 from .config import get, get_section
 from .post import create_post, create_external_embed, detect_facets
 from .public_truth import truth_section
@@ -529,9 +529,10 @@ def generate_post_with_llm(content_type: str, source: dict, guidelines: str, *, 
     - embed_url: str or None
     - reason: str (for logging)
     """
-    env = load_from_pass("api/openrouter")
+    pass_path = get_openrouter_pass_path()
+    env = load_from_pass(pass_path)
     if not env or "OPENROUTER_API_KEY" not in env:
-        print("❌ Missing OPENROUTER_API_KEY")
+        print(f"❌ Missing OPENROUTER_API_KEY in pass {pass_path}")
         return None
     
     api_key = env["OPENROUTER_API_KEY"]
