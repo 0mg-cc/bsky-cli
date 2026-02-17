@@ -213,3 +213,39 @@ def test_fetch_recent_own_posts_respects_lookback_window(monkeypatch):
 
     out = _fetch_recent_own_posts("https://pds.example", "jwt", "did:plc:me", limit=150, lookback_days=7)
     assert out == ["new enough"]
+
+
+def test_create_post_http_error_includes_api_json_detail(monkeypatch):
+    """HTTP failures should include API JSON error details, not just status code."""
+
+    class DummyResponse:
+        text = '{"error":"InvalidRequest","message":"record too long"}'
+
+        def raise_for_status(self):
+            raise post_mod.requests.HTTPError("400 Client Error", response=self)
+
+        def json(self):
+            return {"error": "InvalidRequest", "message": "record too long"}
+
+    monkeypatch.setattr(post_mod.requests, "post", lambda *a, **k: DummyResponse())
+
+    with pytest.raises(SystemExit, match="record too long"):
+        post_mod.create_post("https://pds.example", "jwt", "did:plc:me", "hello")
+
+
+def test_create_post_http_error_falls_back_to_response_text(monkeypatch):
+    """When JSON body is unavailable, fallback should include plain response text."""
+
+    class DummyResponse:
+        text = "upstream timeout"
+
+        def raise_for_status(self):
+            raise post_mod.requests.HTTPError("504 Gateway Timeout", response=self)
+
+        def json(self):
+            raise ValueError("not json")
+
+    monkeypatch.setattr(post_mod.requests, "post", lambda *a, **k: DummyResponse())
+
+    with pytest.raises(SystemExit, match="upstream timeout"):
+        post_mod.create_post("https://pds.example", "jwt", "did:plc:me", "hello")

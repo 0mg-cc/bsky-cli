@@ -356,6 +356,32 @@ def _is_probably_same_topic(new_text: str, recent_text: str) -> bool:
     return jacc >= 0.45 or inter >= 5
 
 
+def _http_error_detail(err: Exception) -> str:
+    """Best-effort extract of API error details from HTTP exceptions."""
+    response = getattr(err, "response", None)
+    if response is None:
+        return str(err)
+
+    try:
+        payload = response.json()
+    except Exception:
+        payload = None
+
+    if isinstance(payload, dict):
+        parts = []
+        for key in ("error", "message"):
+            val = payload.get(key)
+            if isinstance(val, str) and val.strip():
+                parts.append(val.strip())
+        if parts:
+            return " - ".join(parts)
+
+    text = getattr(response, "text", "")
+    if isinstance(text, str) and text.strip():
+        return text.strip()[:500]
+    return str(err)
+
+
 def create_post(
     pds: str,
     jwt: str,
@@ -416,7 +442,10 @@ def create_post(
         json={"repo": did, "collection": "app.bsky.feed.post", "record": record},
         timeout=20,
     )
-    r.raise_for_status()
+    try:
+        r.raise_for_status()
+    except requests.HTTPError as err:
+        raise SystemExit(f"BlueSky API error while creating post: {_http_error_detail(err)}") from err
     return r.json()
 
 
