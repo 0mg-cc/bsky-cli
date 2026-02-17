@@ -4,7 +4,7 @@ requires-python = ">=3.11"
 
 [[package]]
 name = "bsky-cli"
-version = "1.7.2"
+version = "1.7.3"
 source = { editable = "." }
 dependencies = [
     { name = "pillow" },

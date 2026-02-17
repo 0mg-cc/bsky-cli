@@ -16,6 +16,7 @@ import datetime as dt
 import json
 import random
 import subprocess
+import time
 from pathlib import Path
 
 from .http import requests
@@ -48,6 +49,37 @@ def get_appreciate_config() -> dict:
     return get_section("appreciate")
 
 STATE_FILE = Path.home() / "personas/echo/data/bsky-appreciate-state.json"
+
+
+class RunProfiler:
+    """Lightweight JSONL profiler for appreciate runs."""
+
+    def __init__(self, enabled: bool, output_path: str | None = None):
+        self.enabled = bool(enabled)
+        self.events: list[dict] = []
+        self.started_at = dt.datetime.now(dt.timezone.utc)
+        self.output_path = Path(output_path) if output_path else (
+            Path.home() / "personas/echo/data" /
+            f"bsky-appreciate-profile-{self.started_at.strftime('%Y-%m-%dT%H%M%SZ')}.jsonl"
+        )
+
+    def log(self, event: str, **fields) -> None:
+        if not self.enabled:
+            return
+        row = {
+            "ts": dt.datetime.now(dt.timezone.utc).isoformat(),
+            "event": event,
+            **fields,
+        }
+        self.events.append(row)
+
+    def flush(self) -> None:
+        if not self.enabled:
+            return
+        self.output_path.parent.mkdir(parents=True, exist_ok=True)
+        with self.output_path.open("a", encoding="utf-8") as f:
+            for row in self.events:
+                f.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 # Action probabilities (from config, must sum to 1.0)
 def get_prob_like() -> float:
@@ -357,146 +389,181 @@ def quote_post(pds: str, jwt: str, did: str, post_uri: str, post_cid: str,
 
 def run(args) -> int:
     """Entry point from CLI."""
-    print("🔗 Connecting to BlueSky...")
-    pds, did, jwt, handle = get_session()
-    print(f"✓ Logged in as @{handle}")
+    profiler = RunProfiler(
+        enabled=getattr(args, "profile", False),
+        output_path=getattr(args, "profile_output", None),
+    )
+    run_t0 = time.perf_counter()
 
-    state = load_state()
-    hours = getattr(args, 'hours', 12)
-    dry_run = getattr(args, 'dry_run', False)
-    max_actions = getattr(args, 'max', 5)
-    guard = RuntimeGuard(getattr(args, 'max_runtime_seconds', None))
+    try:
+        print("🔗 Connecting to BlueSky...")
+        pds, did, jwt, handle = get_session()
+        print(f"✓ Logged in as @{handle}")
+        profiler.log("session", handle=handle, pds=pds)
 
-    # Collect posts from follows
-    log_phase("collect")
-    if guard.check("collect"):
-        return TIMEOUT_EXIT_CODE
-    print("📋 Fetching follows...")
-    follows = get_follows(pds, jwt, did, guard=guard)
-    if guard.check("collect"):
-        print(f"✓ Following {len(follows)} accounts (partial — timed out)")
-        return TIMEOUT_EXIT_CODE
-    print(f"✓ Following {len(follows)} accounts")
-    
-    print(f"📰 Fetching recent posts (last {hours}h)...")
-    all_posts: list[dict] = []
-    for i, follow in enumerate(follows):
+        state = load_state()
+        hours = getattr(args, 'hours', 12)
+        dry_run = getattr(args, 'dry_run', False)
+        max_actions = getattr(args, 'max', 5)
+        guard = RuntimeGuard(getattr(args, 'max_runtime_seconds', None))
+
+        # Collect posts from follows
+        log_phase("collect")
         if guard.check("collect"):
+            profiler.log("run_summary", status="timeout", phase="collect")
             return TIMEOUT_EXIT_CODE
-        if i % 50 == 0 and i > 0:
-            print(f"  ...checked {i}/{len(follows)} accounts")
-        feed = get_author_feed(pds, jwt, follow["did"])
-        recent = filter_recent_posts(feed, hours=hours)
-        all_posts.extend(recent)
-    
-    print(f"✓ Found {len(all_posts)} posts in the last {hours}h")
+        print("📋 Fetching follows...")
+        t0 = time.perf_counter()
+        follows = get_follows(pds, jwt, did, guard=guard)
+        profiler.log("collect_follows", duration_ms=round((time.perf_counter() - t0) * 1000, 2), follows=len(follows))
+        if guard.check("collect"):
+            print(f"✓ Following {len(follows)} accounts (partial — timed out)")
+            profiler.log("run_summary", status="timeout", phase="collect", follows=len(follows))
+            return TIMEOUT_EXIT_CODE
+        print(f"✓ Following {len(follows)} accounts")
 
-    log_phase("score")
-    if guard.check("score"):
-        return TIMEOUT_EXIT_CODE
+        print(f"📰 Fetching recent posts (last {hours}h)...")
+        all_posts: list[dict] = []
+        for i, follow in enumerate(follows):
+            if guard.check("collect"):
+                profiler.log("run_summary", status="timeout", phase="collect", follows_scanned=i, posts=len(all_posts))
+                return TIMEOUT_EXIT_CODE
+            if i % 50 == 0 and i > 0:
+                print(f"  ...checked {i}/{len(follows)} accounts")
+            feed_t0 = time.perf_counter()
+            feed = get_author_feed(pds, jwt, follow["did"])
+            recent = filter_recent_posts(feed, hours=hours)
+            all_posts.extend(recent)
+            profiler.log(
+                "collect_author_feed",
+                index=i,
+                did=follow.get("did"),
+                handle=follow.get("handle"),
+                duration_ms=round((time.perf_counter() - feed_t0) * 1000, 2),
+                feed_items=len(feed),
+                recent_items=len(recent),
+            )
 
-    if not all_posts:
-        print("No posts to appreciate.")
-        return 0
-    
-    # LLM selection
-    log_phase("decide")
-    if guard.check("decide"):
-        return TIMEOUT_EXIT_CODE
-    print("🤖 Selecting posts to appreciate...")
-    selections = select_posts_with_llm(all_posts, state, max_select=max_actions, dry_run=dry_run)
-    
-    if not selections:
-        print("No posts selected for appreciation.")
-        return 0
-    
-    print(f"\n{'[DRY RUN] ' if dry_run else ''}Selected {len(selections)} posts:\n")
+        print(f"✓ Found {len(all_posts)} posts in the last {hours}h")
+        profiler.log("collect_summary", total_posts=len(all_posts), follows=len(follows), hours=hours)
 
-    log_phase("act")
-    if guard.check("act"):
-        if not dry_run:
-            save_state(state)
-            print("⏱️ Timeout — partial state saved.")
-        return TIMEOUT_EXIT_CODE
+        log_phase("score")
+        if guard.check("score"):
+            profiler.log("run_summary", status="timeout", phase="score", posts=len(all_posts))
+            return TIMEOUT_EXIT_CODE
 
-    likes = 0
-    quotes = 0
-    skips = 0
-    now = dt.datetime.now(dt.timezone.utc).isoformat()
+        if not all_posts:
+            print("No posts to appreciate.")
+            profiler.log("run_summary", status="ok", reason="no_posts", posts=0)
+            return 0
+
+        # LLM selection
+        log_phase("decide")
+        if guard.check("decide"):
+            profiler.log("run_summary", status="timeout", phase="decide", posts=len(all_posts))
+            return TIMEOUT_EXIT_CODE
+        print("🤖 Selecting posts to appreciate...")
+        decide_t0 = time.perf_counter()
+        selections = select_posts_with_llm(all_posts, state, max_select=max_actions, dry_run=dry_run)
+        profiler.log("decide_summary", duration_ms=round((time.perf_counter() - decide_t0) * 1000, 2), selected=len(selections), candidates=len(all_posts))
     
-    for sel in selections:
+        if not selections:
+            print("No posts selected for appreciation.")
+            profiler.log("run_summary", status="ok", reason="no_selection", posts=len(all_posts), selected=0)
+            return 0
+
+        print(f"\n{'[DRY RUN] ' if dry_run else ''}Selected {len(selections)} posts:\n")
+
+        log_phase("act")
         if guard.check("act"):
             if not dry_run:
                 save_state(state)
                 print("⏱️ Timeout — partial state saved.")
+            profiler.log("run_summary", status="timeout", phase="act", selected=len(selections))
             return TIMEOUT_EXIT_CODE
-        action = sel["action"]
-        
-        # Apply probabilistic override for likes
-        if action == "like":
-            roll = random.random()
-            prob_skip = get_prob_skip()
-            prob_quote = get_prob_quote()
-            if roll < prob_skip:
-                action = "skip"
-            elif roll < prob_skip + prob_quote and sel.get("comment"):
-                action = "quote"
-        
-        print(f"@{sel['author_handle']}:")
-        print(f"  Text: {sel['text'][:100]}...")
-        print(f"  Reason: {sel.get('reason', 'N/A')}")
-        print(f"  Action: {action}")
-        
-        if action == "skip":
-            skips += 1
-            print(f"  ⏭️ Skipped (probabilistic)")
-            continue
-        
-        if dry_run:
+
+        likes = 0
+        quotes = 0
+        skips = 0
+        now = dt.datetime.now(dt.timezone.utc).isoformat()
+
+        for sel in selections:
+            if guard.check("act"):
+                if not dry_run:
+                    save_state(state)
+                    print("⏱️ Timeout — partial state saved.")
+                profiler.log("run_summary", status="timeout", phase="act", likes=likes, quotes=quotes, skips=skips)
+                return TIMEOUT_EXIT_CODE
+            action = sel["action"]
+
+            # Apply probabilistic override for likes
             if action == "like":
-                likes += 1
-            elif action == "quote":
-                quotes += 1
-            print()
-            continue
-        
-        if action == "like":
-            result = like_post(pds, jwt, did, sel["uri"], sel["cid"])
-            if result:
-                print(f"  ❤️ Liked!")
-                likes += 1
-                state["liked_posts"].append({"uri": sel["uri"], "ts": now})
-            else:
-                print(f"  ✗ Failed to like")
-        
-        elif action == "quote":
-            comment = sel.get("comment", "")
-            if not comment:
-                # Fallback to like if no comment
+                roll = random.random()
+                prob_skip = get_prob_skip()
+                prob_quote = get_prob_quote()
+                if roll < prob_skip:
+                    action = "skip"
+                elif roll < prob_skip + prob_quote and sel.get("comment"):
+                    action = "quote"
+
+            print(f"@{sel['author_handle']}:")
+            print(f"  Text: {sel['text'][:100]}...")
+            print(f"  Reason: {sel.get('reason', 'N/A')}")
+            print(f"  Action: {action}")
+
+            if action == "skip":
+                skips += 1
+                print(f"  ⏭️ Skipped (probabilistic)")
+                continue
+
+            if dry_run:
+                if action == "like":
+                    likes += 1
+                elif action == "quote":
+                    quotes += 1
+                print()
+                continue
+
+            if action == "like":
                 result = like_post(pds, jwt, did, sel["uri"], sel["cid"])
                 if result:
-                    print(f"  ❤️ Liked (no comment for quote)")
+                    print(f"  ❤️ Liked!")
                     likes += 1
                     state["liked_posts"].append({"uri": sel["uri"], "ts": now})
-            else:
-                result = quote_post(pds, jwt, did, sel["uri"], sel["cid"], comment)
-                if result:
-                    print(f"  🔁 Quoted: \"{comment}\"")
-                    quotes += 1
-                    state["quoted_posts"].append({"uri": sel["uri"], "ts": now})
-                    # Also like the original
-                    like_post(pds, jwt, did, sel["uri"], sel["cid"])
                 else:
-                    print(f"  ✗ Failed to quote")
-        
-        print()
-    
-    if not dry_run:
-        save_state(state)
-    
-    print(f"\n✓ Appreciation complete: {likes} likes, {quotes} quotes, {skips} skipped")
-    
-    return 0
+                    print(f"  ✗ Failed to like")
+
+            elif action == "quote":
+                comment = sel.get("comment", "")
+                if not comment:
+                    # Fallback to like if no comment
+                    result = like_post(pds, jwt, did, sel["uri"], sel["cid"])
+                    if result:
+                        print(f"  ❤️ Liked (no comment for quote)")
+                        likes += 1
+                        state["liked_posts"].append({"uri": sel["uri"], "ts": now})
+                else:
+                    result = quote_post(pds, jwt, did, sel["uri"], sel["cid"], comment)
+                    if result:
+                        print(f"  🔁 Quoted: \"{comment}\"")
+                        quotes += 1
+                        state["quoted_posts"].append({"uri": sel["uri"], "ts": now})
+                        # Also like the original
+                        like_post(pds, jwt, did, sel["uri"], sel["cid"])
+                    else:
+                        print(f"  ✗ Failed to quote")
+
+            print()
+
+        if not dry_run:
+            save_state(state)
+
+        print(f"\n✓ Appreciation complete: {likes} likes, {quotes} quotes, {skips} skipped")
+        profiler.log("run_summary", status="ok", likes=likes, quotes=quotes, skips=skips, selected=len(selections))
+        return 0
+    finally:
+        profiler.log("run_duration", duration_ms=round((time.perf_counter() - run_t0) * 1000, 2))
+        profiler.flush()
 
 
 def main():
@@ -525,6 +592,8 @@ PROBABILISTIC BEHAVIOR:
     parser.add_argument("--hours", type=int, default=12, help="Look back N hours (default: 12)")
     parser.add_argument("--max", type=int, default=5, help="Max posts to select (default: 5)")
     parser.add_argument("--max-runtime-seconds", type=int, default=None, help="Abort after N seconds wall-clock")
+    parser.add_argument("--profile", action="store_true", help="Write per-step timing diagnostics to JSONL")
+    parser.add_argument("--profile-output", default=None, help="Path to JSONL diagnostics file")
     args = parser.parse_args()
     return run(args)
 

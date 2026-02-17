@@ -314,6 +314,8 @@ PROBABILISTIC BEHAVIOR:
     appreciate_parser.add_argument("--hours", type=int, default=12, help="Look back N hours (default: 12)")
     appreciate_parser.add_argument("--max", type=int, default=5, help="Max posts to select (default: 5)")
     appreciate_parser.add_argument("--max-runtime-seconds", type=int, default=None, help="Abort after N seconds wall-clock")
+    appreciate_parser.add_argument("--profile", action="store_true", help="Write per-step timing diagnostics to JSONL")
+    appreciate_parser.add_argument("--profile-output", default=None, help="Path to JSONL diagnostics file")
 
     # discover
     discover_parser = subparsers.add_parser(
