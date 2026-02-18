@@ -233,9 +233,10 @@ class Budgets:
 
 
 def run_scored(args, pds: str, did: str, jwt: str) -> int:
-    from .notify import get_notifications, get_last_seen, save_last_seen
+    from .notify import get_notifications, get_last_seen, save_last_seen, update_seen
 
     notifications = get_notifications(pds, jwt, limit=args.limit)
+    server_newest = max((n.get("indexedAt", "") for n in notifications), default="")
 
     last_seen = get_last_seen()
     if not args.all and last_seen:
@@ -307,10 +308,14 @@ def run_scored(args, pds: str, did: str, jwt: str) -> int:
             print()
 
     if not getattr(args, "execute", False):
-        # Update last seen to avoid re-printing forever
+        # Update local cursor (source of truth) to avoid re-printing forever
         newest = max((n.get("indexedAt", "") for n in notifications), default="")
         if newest:
             save_last_seen(newest)
+
+        # Also sync server-side seen marker so BlueSky unread counters stay clean.
+        if server_newest:
+            update_seen(pds, jwt, datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"))
         return 0
 
     # Execute actions
@@ -412,5 +417,8 @@ def run_scored(args, pds: str, did: str, jwt: str) -> int:
     newest = max((n.get("indexedAt", "") for n in notifications), default="")
     if newest:
         save_last_seen(newest)
+
+    if server_newest:
+        update_seen(pds, jwt, datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"))
 
     return 0
