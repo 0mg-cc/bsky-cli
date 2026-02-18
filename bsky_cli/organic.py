@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import json
 import random
+import re
 import subprocess
 import sys
 from datetime import datetime
@@ -881,7 +882,11 @@ def run(args) -> int:
 
         if result:
             print(f"\n✓ Posted successfully!")
-            print(f"  URI: {result.get('uri', '')}")
+            uri = result.get('uri', '')
+            print(f"  URI: {uri}")
+            m = re.match(r"^at://([^/]+)/app\.bsky\.feed\.post/([^/]+)$", uri)
+            if m:
+                print(f"  URL: https://bsky.app/profile/{m.group(1)}/post/{m.group(2)}")
             return 0
 
         print("\n❌ Failed to post")
